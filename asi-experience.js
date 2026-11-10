@@ -5,6 +5,9 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.0.6  2026-11-10  Reveals: cards inside a horizontal scroll row (phone/tablet carousels) reveal together when the
+ *                     row enters view, instead of staying hidden until swiped. Carousel snap respects the track's
+ *                     padding, so the first card sits on the page gutter.
  * v1.0.5  2026-11-09  Plant layouts on Services and Aggregate are the live plant visualizer (hover the pins). The
  *                     Aggregate rocks loop matches its new still. Machine cards stay as still renders.
  * v1.0.4  2026-11-09  Steppers carry their designed active look into every row (title weight, description shown).
@@ -19,7 +22,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.0.5';
+  window.__asiExperience = '1.0.6';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -161,6 +164,13 @@
   }
 
   /* ---------- 2. scroll reveals (cards, headings, rows) ---------- */
+  function hScroller(el) {
+    for (var a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+      var ox = getComputedStyle(a).overflowX;
+      if ((ox === 'auto' || ox === 'scroll') && a.scrollWidth > a.clientWidth + 2) return a;
+    }
+    return null;
+  }
   function reveals() {
     if (RM || !('IntersectionObserver' in window)) return;
     var first = document.body.querySelector('section, [class*="hero"]');
@@ -172,13 +182,19 @@
     var io = new IntersectionObserver(function (es) {
       es.forEach(function (e) {
         if (!e.isIntersecting) return;
-        var el = e.target, sibs = el.parentNode ? $$(':scope > .asi-rv', el.parentNode) : [el];
-        var i = Math.max(0, sibs.indexOf(el));
-        el.style.transitionDelay = Math.min(i, 6) * 70 + 'ms';
-        el.classList.add('asi-in');
-        io.unobserve(el);
-        /* v1.0.3: strip the reveal classes once done, so designed opacity (e.g. dimmed rows) comes back. */
-        setTimeout(function () { el.style.transitionDelay = ''; el.classList.remove('asi-rv', 'asi-in'); }, 1400);
+        /* v1.0.6: items inside a horizontal scroll row (phone/tablet carousels) never cross the viewport
+           vertically on their own, so the first one in view reveals the whole row. */
+        var sc = hScroller(e.target);
+        var group = sc ? $$('.asi-rv', sc).filter(function (x) { return !x.classList.contains('asi-in'); }) : [e.target];
+        group.forEach(function (el, gi) {
+          var sibs = el.parentNode ? $$(':scope > .asi-rv', el.parentNode) : [el];
+          var i = sc ? gi : Math.max(0, sibs.indexOf(el));
+          el.style.transitionDelay = Math.min(i, 6) * 70 + 'ms';
+          el.classList.add('asi-in');
+          io.unobserve(el);
+          /* v1.0.3: strip the reveal classes once done, so designed opacity (e.g. dimmed rows) comes back. */
+          setTimeout(function () { el.style.transitionDelay = ''; el.classList.remove('asi-rv', 'asi-in'); }, 1400);
+        });
       });
     }, { threshold: 0.12, rootMargin: '0px 0px -6% 0px' });
     els.forEach(function (el) { io.observe(el); });
@@ -236,6 +252,11 @@
   function carousels() {
     $$('[data-asi-carousel]').forEach(function (track) {
       var sec = closestSection(track);
+      /* v1.0.6: snap respects the track's own padding (first card sits on the page gutter, not at x=0),
+         unless the page set its own scroll-padding. */
+      var ownPad = getComputedStyle(track).scrollPaddingLeft !== 'auto';
+      function pad() { if (ownPad) return; var s = getComputedStyle(track); track.style.scrollPaddingLeft = s.paddingLeft; track.style.scrollPaddingRight = s.paddingRight; }
+      pad(); window.addEventListener('resize', pad);
       function step() { var c = track.children[0]; if (!c) return track.clientWidth * 0.8; var gap = parseFloat(getComputedStyle(track).columnGap) || 20; return c.getBoundingClientRect().width + gap; }
       var prev = $('[data-asi-prev]', sec), next = $('[data-asi-next]', sec);
       if (prev) prev.addEventListener('click', function () { track.scrollBy({ left: -step(), behavior: RM ? 'auto' : 'smooth' }); });
