@@ -5,6 +5,7 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.0.8  2026-11-10  Card photo zoom no longer scales the arrow and call squares inside cards.
  * v1.0.7  2026-11-10  Review round, Phase 1: arrow buttons no longer nudge; on hover the square turns Go Green with a
  *                     dark arrow. Careers cards brighten their photo on hover (pointer devices only). Nav blur gets
  *                     the -webkit- prefix for Safari.
@@ -25,7 +26,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.0.7';
+  window.__asiExperience = '1.0.8';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -85,8 +86,9 @@
     '@media (hover:hover){.home-career-card:hover .home-career-media-dim{opacity:1}}',
     /* v1.0.7 (R-03): Safari needs the prefixed blur; Webflow only writes the standard property. */
     '.nav{-webkit-backdrop-filter:blur(7.5px)}',
-    '.card img,[class*="-card"] img{transition:transform .6s ' + EASE + '}',
-    '.card:hover img,[class*="-card"]:hover img{transform:scale(1.03)}',
+    /* v1.0.8: the card photo zoom skips button icons, so arrow and call squares never move (R-01). */
+    '.card img:not(.btn-icon),[class*="-card"] img:not(.btn-icon){transition:transform .6s ' + EASE + '}',
+    '.card:hover img:not(.btn-icon),[class*="-card"]:hover img:not(.btn-icon){transform:scale(1.03)}',
     '.carousel-arrow{transition:background-color .2s}',
     '.carousel-arrow:hover{background-color:' + GREEN + '}',
     '.carousel-arrow:empty::before{content:"";display:block;width:9px;height:9px;margin:auto;border-top:1.5px solid #171d22;border-left:1.5px solid #171d22;transform:rotate(-45deg) translate(1px,1px)}',
