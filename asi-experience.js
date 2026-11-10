@@ -5,6 +5,8 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.0.2  2026-11-09  Carousel arrows only get a drawn chevron when they have no icon of their own. Selector rows keep their designed dimmed look as the selection moves; tab panes hidden
+ *                     in the Designer now show when their tab is chosen.
  * v1.0.1  2026-11-09  Bars read their height from data-asi-value; loops limited to slots whose footage
  *                     matches the designed still (hero drone, cloud hero with the darker Figma grade).
  * v1.0.0  2026-11-09  First release for staging: nav menus, reveals, FAQ, carousels, selectors,
@@ -13,7 +15,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.0.1';
+  window.__asiExperience = '1.0.2';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -64,8 +66,8 @@
     '.card:hover img,[class*="-card"]:hover img{transform:scale(1.03)}',
     '.carousel-arrow{transition:background-color .2s}',
     '.carousel-arrow:hover{background-color:' + GREEN + '}',
-    '.carousel-arrow::before{content:"";display:block;width:9px;height:9px;margin:auto;border-top:1.5px solid #171d22;border-left:1.5px solid #171d22;transform:rotate(-45deg) translate(1px,1px)}',
-    '[data-asi-next]::before{transform:rotate(135deg) translate(1px,1px)}',
+    '.carousel-arrow:empty::before{content:"";display:block;width:9px;height:9px;margin:auto;border-top:1.5px solid #171d22;border-left:1.5px solid #171d22;transform:rotate(-45deg) translate(1px,1px)}',
+    '[data-asi-next]:empty::before{transform:rotate(135deg) translate(1px,1px)}',
     'html.asi-js .asi-rv{opacity:0;transform:translateY(16px);transition:opacity .6s ' + EASE + ',transform .6s ' + EASE + '}',
     'html.asi-js .asi-rv.asi-in{opacity:1;transform:none}',
     '.asi-w{display:inline-block;overflow:hidden;vertical-align:top;padding-bottom:.08em;margin-bottom:-.08em}',
@@ -252,13 +254,19 @@
     if (panes.length === items.length) {
       var host = panes[0].parentNode; if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
     }
+    /* v1.0.2: classes that only inactive rows carry (e.g. a dimmed/blurred look) move with the selection. */
+    var dims = [];
+    items.forEach(function (it, k) { if (k === a.idx) return; it.className.split(/\s+/).forEach(function (c) { if (c && (' ' + items[a.idx].className + ' ').indexOf(' ' + c + ' ') < 0 && dims.indexOf(c) < 0) dims.push(c); }); });
     function show(i) {
       cur = i;
       items.forEach(function (it, k) {
         if (a.cls) it.classList.toggle(a.cls, k === i); else it.style.opacity = k === i ? '1' : '.45';
+        dims.forEach(function (c) { it.classList.remove(c); });
+        if (k !== i && dims.length) it.classList.add(dims[0]);
         it.setAttribute('aria-selected', k === i ? 'true' : 'false');
       });
-      if (panes.length === items.length) panes.forEach(function (p, k) { p.classList.toggle('asi-pane-off', k !== i); });
+      /* v1.0.2: panes hidden with u-hide in the Designer are handed to the crossfade instead. */
+      if (panes.length === items.length) panes.forEach(function (p, k) { p.classList.remove('u-hide'); p.classList.toggle('asi-pane-off', k !== i); });
     }
     items.forEach(function (it, k) {
       it.setAttribute('tabindex', '0'); it.setAttribute('role', 'tab');
