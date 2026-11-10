@@ -5,6 +5,9 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.0.7  2026-11-10  Review round, Phase 1: arrow buttons no longer nudge; on hover the square turns Go Green with a
+ *                     dark arrow. Careers cards brighten their photo on hover (pointer devices only). Nav blur gets
+ *                     the -webkit- prefix for Safari.
  * v1.0.6  2026-11-10  Reveals: cards inside a horizontal scroll row (phone/tablet carousels) reveal together when the
  *                     row enters view, instead of staying hidden until swiped. Carousel snap respects the track's
  *                     padding, so the first card sits on the page gutter.
@@ -22,12 +25,13 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.0.6';
+  window.__asiExperience = '1.0.7';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
   var EASE = 'cubic-bezier(.2,.7,.2,1)';
   var GREEN = '#8ae14d';
+  var ARROW_HOVER = 'https://cdn.prod.website-files.com/6ae0b8e3255cc1be07d5b192/6af290e36fcffdb374e4df3d_btn-arrow-green.svg';
 
   /* Videos ride the same commit as this file (see selfBase). Slot name -> file. */
   var VIDEO = {
@@ -67,9 +71,20 @@
     '.nav-mobile.asi-open{display:flex}',
     '.nav-dd-menu{opacity:0;transform:translateY(-6px);transition:opacity .2s ' + EASE + ',transform .2s ' + EASE + '}',
     '.nav-dd-menu.asi-show{opacity:1;transform:none}',
-    '.btn .btn-icon{transition:transform .25s ' + EASE + ',filter .25s}',
-    '.btn:hover .btn-icon{transform:translate(2px,-2px)}',
-    '.btn-call:hover .btn-icon{filter:brightness(1.12);transform:none}',
+    /* v1.0.7 (R-01): arrow buttons. The square does not move; on hover it turns Go Green with a dark arrow.
+       The hover art is the site's own btn-arrow-green.svg, painted behind the icon; object-position slides
+       the icon's own art out of its box so the green one shows. Call buttons are not arrow icons and keep
+       their brighten. Touch screens never get a stuck hover. */
+    '.btn .btn-icon{transition:filter .25s}',
+    '.btn img.btn-icon[src*="arrow"],.ptn-submit-row img.btn-icon{background:url(' + ARROW_HOVER + ') center/100% 100% no-repeat}',
+    '@media (hover:hover){.btn:hover img.btn-icon[src*="arrow"],.ptn-submit-row:hover img.btn-icon{object-position:0 -999px}}',
+    '.btn-call:hover .btn-icon{filter:brightness(1.12)}',
+    /* v1.0.7 (R-10): careers cards rest dimmed; hover brings the photo to full strength (the "Field startups"
+       look in Figma). Hover-capable pointers only, so touch keeps the resting state. */
+    '.home-career-media-dim{transition:opacity .45s ' + EASE + '}',
+    '@media (hover:hover){.home-career-card:hover .home-career-media-dim{opacity:1}}',
+    /* v1.0.7 (R-03): Safari needs the prefixed blur; Webflow only writes the standard property. */
+    '.nav{-webkit-backdrop-filter:blur(7.5px)}',
     '.card img,[class*="-card"] img{transition:transform .6s ' + EASE + '}',
     '.card:hover img,[class*="-card"]:hover img{transform:scale(1.03)}',
     '.carousel-arrow{transition:background-color .2s}',
