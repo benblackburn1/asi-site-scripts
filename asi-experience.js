@@ -5,6 +5,9 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.0.5  2026-11-09  Plant layouts on Services and Aggregate are the live plant visualizer (hover the pins). The
+ *                     Aggregate rocks loop matches its new still. Machine cards stay as still renders.
+ * v1.0.4  2026-11-09  Steppers carry their designed active look into every row (title weight, description shown).
  * v1.0.3  2026-11-09  Reveal animations clean up after themselves, so rows designed to look dimmed stay dimmed.
  * v1.0.2  2026-11-09  Carousel arrows only get a drawn chevron when they have no icon of their own. Selector rows keep their designed dimmed look as the selection moves; tab panes hidden
  *                     in the Designer now show when their tab is chosen.
@@ -16,7 +19,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.0.3';
+  window.__asiExperience = '1.0.5';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -26,7 +29,7 @@
   /* Videos ride the same commit as this file (see selfBase). Slot name -> file. */
   var VIDEO = {
     'hero-drone': 'video/hero-drone.mp4',
-    'agg-rocks': 'video/agg-rocks.mp4',
+    'agg-rocks': 'video/agg-rocks-3x2.mp4',
     'stacker': 'video/stacker-sway.mp4',
     'silo': 'video/silo-sway.mp4',
     'crusher': 'video/crusher.mp4',
@@ -39,8 +42,9 @@
   /* Page slot names -> library loops. Unmapped slots keep their still image. */
   var SLOT = {
     'hero-drone': { v: 'hero-drone' },
-    'cloud-hero': { v: 'conveyor-bitmap', filter: 'brightness(.3) contrast(1.15)' }
-    /* Not mapped yet (still images stay): machine-1..4 and agg-rocks need loops rendered from the
+    'cloud-hero': { v: 'conveyor-bitmap', filter: 'brightness(.3) contrast(1.15)' },
+    'agg-rocks': { v: 'agg-rocks' }
+    /* Machine cards (machine-1..4) are still renders by design. Not mapped yet (still images stay): the
        same visualizer camera as their Figma stills; eh-container-1, kpi-dashboard, cloud-phone,
        plant-diagram and who-1..3 have no matching loop yet. Add a line here when one is rendered. */
   };
@@ -92,6 +96,9 @@
     '.asi-video.asi-on{opacity:1}',
     '[data-asi-chips]>*{will-change:transform}',
     '.faq-a{transition:opacity .3s}',
+    '.asi-live{position:absolute;left:0;top:0;width:100%;height:100%;border:0;opacity:0;transition:opacity .8s;background:transparent}',
+    '.asi-live.asi-on{opacity:1}',
+    '.asi-live-on [data-asi-hotspot],.asi-live-on [data-asi-tag]{display:none!important}',
     '@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}html.asi-js .asi-rv{opacity:1;transform:none;transition:none}.asi-wi{transform:none;transition:none}.asi-ring{animation:none}}'
   ];
   var st = document.createElement('style');
@@ -127,7 +134,7 @@
   }
 
   onReady(function () {
-    [navMenus, reveals, splitHeads, eyebrowPulse, faqs, carousels, selectors, accordions, charts, counters, hotspots, videos]
+    [navMenus, reveals, splitHeads, eyebrowPulse, faqs, carousels, selectors, accordions, charts, counters, hotspots, videos, liveViews]
       .forEach(function (fn) { safe(fn.name, fn)(); });
   });
 
@@ -256,15 +263,27 @@
     if (panes.length === items.length) {
       var host = panes[0].parentNode; if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
     }
-    /* v1.0.2: classes that only inactive rows carry (e.g. a dimmed/blurred look) move with the selection. */
-    var dims = [];
-    items.forEach(function (it, k) { if (k === a.idx) return; it.className.split(/\s+/).forEach(function (c) { if (c && (' ' + items[a.idx].className + ' ').indexOf(' ' + c + ' ') < 0 && dims.indexOf(c) < 0) dims.push(c); }); });
+    /* v1.0.4: the active vs inactive look is learned from the markup, for the row and every element inside it
+       (e.g. a title that swaps t-step / t-step-active, a description hidden with u-hide). On each change the
+       class differences move with the selection. */
+    var other = a.idx === 0 ? 1 : 0;
+    function nodes(el) { return [el].concat($$('*', el)); }
+    function cls(n) { return typeof n.className === 'string' ? n.className.split(/\s+/) : []; }
+    var tplA = nodes(items[a.idx]), tplI = nodes(items[other]), diffs = [];
+    if (tplA.length === tplI.length) {
+      tplA.forEach(function (n, k) {
+        var ca = cls(n), ci = cls(tplI[k]);
+        var onA = ca.filter(function (c) { return c && ci.indexOf(c) < 0; }), onI = ci.filter(function (c) { return c && ca.indexOf(c) < 0; });
+        if (onA.length || onI.length) diffs.push({ k: k, a: onA, i: onI });
+      });
+    }
     function show(i) {
       cur = i;
       items.forEach(function (it, k) {
-        if (a.cls) it.classList.toggle(a.cls, k === i); else it.style.opacity = k === i ? '1' : '.45';
-        dims.forEach(function (c) { it.classList.remove(c); });
-        if (k !== i && dims.length) it.classList.add(dims[0]);
+        var ns = nodes(it);
+        if (diffs.length && ns.length === tplA.length) {
+          diffs.forEach(function (d) { var n = ns[d.k]; d.a.concat(d.i).forEach(function (c) { n.classList.remove(c); }); (k === i ? d.a : d.i).forEach(function (c) { n.classList.add(c); }); });
+        } else if (a.cls) it.classList.toggle(a.cls, k === i); else it.style.opacity = k === i ? '1' : '.45';
         it.setAttribute('aria-selected', k === i ? 'true' : 'false');
       });
       /* v1.0.2: panes hidden with u-hide in the Designer are handed to the crossfade instead. */
@@ -356,6 +375,33 @@
       });
       window.addEventListener('resize', function () { if (cur > -1) show(cur); });
       if (!RM) setInterval(function () { if (!document.hidden && !pinned && Date.now() - last > 6800) show((cur + 1) % g.list.length); }, 1000);
+    });
+  }
+
+
+  /* ---------- 12. live plant layouts: the ASI plant visualizer, embedded where data-asi-live is set ----------
+     v1.0.5: the value is the visualizer link's query string. Loads when the slot nears the viewport, fades in
+     over the still once it has had time to draw, and hides the page's static dots and tag. Scroll-zoom is off
+     (orbit=0) so the page keeps scrolling. Phones and reduced-motion keep the still image. */
+  var VIZ = 'https://asi-plant-visualizer.vercel.app/?';
+  function liveViews() {
+    if (RM || window.innerWidth < 768) return;
+    $$('[data-asi-live]').forEach(function (wrap) {
+      var q = wrap.getAttribute('data-asi-live'); if (!q) return;
+      if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
+      var started = false;
+      inView(wrap, function (on, e, io) {
+        if (!on || started) return; started = true; io.disconnect();
+        var f = document.createElement('iframe');
+        f.className = 'asi-live'; f.title = wrap.getAttribute('data-asi-live-title') || 'Live plant view';
+        f.setAttribute('loading', 'lazy'); f.setAttribute('allow', 'fullscreen');
+        f.src = VIZ + q + (/(^|&)bare(&|$)/.test(q) ? '' : '&bare') + '&ui=0&orbit=0';
+        var still = $('img', wrap);
+        if (still && still.nextSibling) wrap.insertBefore(f, still.nextSibling); else wrap.appendChild(f);
+        f.addEventListener('load', function () {
+          setTimeout(function () { f.classList.add('asi-on'); var sec = closestSection(wrap); if (sec) sec.classList.add('asi-live-on'); }, 1800);
+        });
+      }, { rootMargin: '300px 0px', threshold: 0 });
     });
   }
 
