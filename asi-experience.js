@@ -5,6 +5,7 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.0.3  2026-11-09  Reveal animations clean up after themselves, so rows designed to look dimmed stay dimmed.
  * v1.0.2  2026-11-09  Carousel arrows only get a drawn chevron when they have no icon of their own. Selector rows keep their designed dimmed look as the selection moves; tab panes hidden
  *                     in the Designer now show when their tab is chosen.
  * v1.0.1  2026-11-09  Bars read their height from data-asi-value; loops limited to slots whose footage
@@ -15,7 +16,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.0.2';
+  window.__asiExperience = '1.0.3';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -156,7 +157,7 @@
   function reveals() {
     if (RM || !('IntersectionObserver' in window)) return;
     var first = document.body.querySelector('section, [class*="hero"]');
-    var sel = 'h2, .btn-row, .faq-item, .card, [class*="-card"]:not(.glass-card), [data-asi-item], [class*="-row"]';
+    var sel = 'h2, .btn-row, .faq-item, .card, [class*="-card"]:not(.glass-card), [class*="-row"]:not([data-asi-item])';
     var els = $$(sel).filter(function (el) {
       return !el.closest('.nav, .footer, .cta-band, [data-asi-chips]') && !(first && first.contains(el)) && !el.closest('.asi-rv') && el.offsetParent !== null;
     });
@@ -169,14 +170,15 @@
         el.style.transitionDelay = Math.min(i, 6) * 70 + 'ms';
         el.classList.add('asi-in');
         io.unobserve(el);
-        setTimeout(function () { el.style.transitionDelay = ''; }, 1400);
+        /* v1.0.3: strip the reveal classes once done, so designed opacity (e.g. dimmed rows) comes back. */
+        setTimeout(function () { el.style.transitionDelay = ''; el.classList.remove('asi-rv', 'asi-in'); }, 1400);
       });
     }, { threshold: 0.12, rootMargin: '0px 0px -6% 0px' });
     els.forEach(function (el) { io.observe(el); });
     /* hero: soft load-in */
     if (first) {
       var heroBits = $$('h1, .glass-card, .btn-row, [data-asi-chips] > *', first);
-      heroBits.forEach(function (el, i) { el.classList.add('asi-rv'); setTimeout(function () { el.style.transitionDelay = (150 + i * 90) + 'ms'; el.classList.add('asi-in'); }, 30); });
+      heroBits.forEach(function (el, i) { el.classList.add('asi-rv'); setTimeout(function () { el.style.transitionDelay = (150 + i * 90) + 'ms'; el.classList.add('asi-in'); setTimeout(function () { el.style.transitionDelay = ''; el.classList.remove('asi-rv', 'asi-in'); }, 1600); }, 30); });
     }
   }
 
