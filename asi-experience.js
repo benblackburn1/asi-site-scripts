@@ -5,13 +5,15 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.0.1  2026-11-09  Bars read their height from data-asi-value; loops limited to slots whose footage
+ *                     matches the designed still (hero drone, cloud hero with the darker Figma grade).
  * v1.0.0  2026-11-09  First release for staging: nav menus, reveals, FAQ, carousels, selectors,
  *                     charts, counters, plant-diagram hotspots, video loops, tracked hero chips.
  */
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.0.0';
+  window.__asiExperience = '1.0.1';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -33,15 +35,11 @@
   };
   /* Page slot names -> library loops. Unmapped slots keep their still image. */
   var SLOT = {
-    'hero-drone': 'hero-drone',
-    'agg-rocks': 'agg-rocks',
-    'machine-1': 'stacker',
-    'machine-2': 'silo',
-    'machine-3': 'crusher',
-    'machine-4': 'stacker',
-    'eh-container-1': 'container',
-    'cloud-hero': 'conveyor-bitmap',
-    'kpi-dashboard': 'hmi-running'
+    'hero-drone': { v: 'hero-drone' },
+    'cloud-hero': { v: 'conveyor-bitmap', filter: 'brightness(.3) contrast(1.15)' }
+    /* Not mapped yet (still images stay): machine-1..4 and agg-rocks need loops rendered from the
+       same visualizer camera as their Figma stills; eh-container-1, kpi-dashboard, cloud-phone,
+       plant-diagram and who-1..3 have no matching loop yet. Add a line here when one is rendered. */
   };
 
   function selfBase() {
@@ -284,7 +282,8 @@
   function charts() {
     $$('[data-asi-chart]').forEach(function (chart) {
       var bars = $$('[data-asi-bar]', chart);
-      var targets = bars.map(function (b) { return b.style.height || getComputedStyle(b).height; });
+      /* v1.0.1: Webflow cannot hold inline heights, so bars carry data-asi-value (percent) or a class height. */
+      var targets = bars.map(function (b) { var dv = b.getAttribute('data-asi-value'); if (dv) return parseFloat(dv) + '%'; var h = b.style.height; if (h) return h; var ph = b.parentNode.getBoundingClientRect().height; return ph ? (b.getBoundingClientRect().height / ph * 100).toFixed(1) + '%' : getComputedStyle(b).height; });
       if (RM) return;
       bars.forEach(function (b) { b.style.transition = 'none'; b.style.height = '0%'; void b.offsetHeight; b.style.transition = ''; });
       inView(chart, function (on, e, io) {
@@ -355,13 +354,14 @@
     if (RM || !BASE) return;
     var saveData = navigator.connection && navigator.connection.saveData;
     $$('[data-asi-video]').forEach(function (wrap) {
-      var key = SLOT[wrap.getAttribute('data-asi-video')]; if (!key || !VIDEO[key] || saveData) return;
+      var slot = SLOT[wrap.getAttribute('data-asi-video')]; var key = slot && slot.v; if (!key || !VIDEO[key] || saveData) return;
       var still = $('img', wrap);
       if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
       var v = document.createElement('video');
       v.className = 'asi-video'; v.muted = true; v.loop = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.setAttribute('muted', ''); v.preload = 'none';
       v.setAttribute('aria-hidden', 'true');
       if (still) { var cs = getComputedStyle(still); v.style.objectFit = cs.objectFit || 'cover'; v.style.objectPosition = cs.objectPosition; v.style.borderRadius = cs.borderRadius; }
+      if (slot.filter) v.style.filter = slot.filter;
       v.src = BASE + VIDEO[key];
       if (still && still.nextSibling) wrap.insertBefore(v, still.nextSibling); else wrap.appendChild(v);
       v.addEventListener('playing', function () { v.classList.add('asi-on'); });
