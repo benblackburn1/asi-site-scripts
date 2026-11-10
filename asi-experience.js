@@ -5,6 +5,15 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.1.0  2026-11-10  Review round, Phase 2 (motion on existing markup). New modules: nav hides on scroll down and
+ *                     returns on scroll up (R-02); Services cards grow, sharpen and settle as you scroll (R-14,
+ *                     data-asi-stack); Services statement pins and reads through word by word (R-16,
+ *                     data-asi-readthrough); Aggregate help line traces green with scroll (R-24, data-asi-progress);
+ *                     endless carousels (R-30, data-asi-loop); lists fall into place once (R-31/32/35,
+ *                     data-asi-cascade); KPI hero chips orbit the ASI mark (R-34, data-asi-orbit); Partners diagram
+ *                     dashes flow toward ASI and its readings drift (R-41, data-asi-diagram). Home selector panes
+ *                     replay their chart when shown (R-09). Pinned and scrubbed modules run at 992 px and up; every
+ *                     module skips under prefers-reduced-motion.
  * v1.0.8  2026-11-10  Card photo zoom no longer scales the arrow and call squares inside cards.
  * v1.0.7  2026-11-10  Review round, Phase 1: arrow buttons no longer nudge; on hover the square turns Go Green with a
  *                     dark arrow. Careers cards brighten their photo on hover (pointer devices only). Nav blur gets
@@ -26,7 +35,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.0.8';
+  window.__asiExperience = '1.1.0';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -119,6 +128,14 @@
     '.asi-live{position:absolute;left:0;top:0;width:100%;height:100%;border:0;opacity:0;transition:opacity .8s;background:transparent}',
     '.asi-live.asi-on{opacity:1}',
     '.asi-live-on [data-asi-hotspot],.asi-live-on [data-asi-tag]{display:none!important}',
+    /* v1.1.0 */
+    '[data-asi-cascade].asi-cas-wait>*{opacity:0;transform:translateY(-18px) scale(.94);filter:blur(10px)}',
+    '[data-asi-cascade]>*{transition:opacity .7s ' + EASE + ',transform .8s ' + EASE + ',filter .8s ' + EASE + '}',
+    '.asi-progress-fill{position:absolute;background:' + GREEN + ';pointer-events:none}',
+    '[data-asi-progress] [class*="-marker"]{transition:background-color .25s}',
+    '@keyframes asiFlow{to{stroke-dashoffset:-14}}',
+    '.asi-flow{stroke-dasharray:7 7;animation:asiFlow 1.1s linear infinite}',
+    '.asi-rt{transition:opacity .15s linear}',
     '@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}html.asi-js .asi-rv{opacity:1;transform:none;transition:none}.asi-wi{transform:none;transition:none}.asi-ring{animation:none}}'
   ];
   var st = document.createElement('style');
@@ -153,10 +170,13 @@
     return { idx: items.indexOf(marked), cls: cls };
   }
 
-  onReady(function () {
-    [navMenus, reveals, splitHeads, eyebrowPulse, faqs, carousels, selectors, accordions, charts, counters, hotspots, videos, liveViews]
+  /* v1.1.0: modules start from the last line of this file, so every variable below is set even when the
+     script runs after the page has already loaded. */
+  function boot() {
+    [navMenus, navAutoHide, reveals, splitHeads, eyebrowPulse, faqs, loops, carousels, selectors, accordions, charts, counters, hotspots, videos, liveViews,
+      cascades, stacks, readthroughs, progressLines, orbits, diagrams]
       .forEach(function (fn) { safe(fn.name, fn)(); });
-  });
+  }
 
   /* ---------- 1. nav: services dropdown + mobile menu ---------- */
   function navMenus() {
@@ -193,7 +213,7 @@
     var first = document.body.querySelector('section, [class*="hero"]');
     var sel = 'h2, .btn-row, .faq-item, .card, [class*="-card"]:not(.glass-card), [class*="-row"]:not([data-asi-item])';
     var els = $$(sel).filter(function (el) {
-      return !el.closest('.nav, .footer, .cta-band, [data-asi-chips]') && !(first && first.contains(el)) && !el.closest('.asi-rv') && el.offsetParent !== null;
+      return !el.closest('.nav, .footer, .cta-band, [data-asi-chips], [data-asi-cascade], [data-asi-stack]') && !(first && first.contains(el)) && !el.closest('.asi-rv') && el.offsetParent !== null;
     });
     els.forEach(function (el) { el.classList.add('asi-rv'); });
     var io = new IntersectionObserver(function (es) {
@@ -326,7 +346,10 @@
       });
       /* v1.0.2: panes hidden with u-hide in the Designer are handed to the crossfade instead. */
       if (panes.length === items.length) panes.forEach(function (p, k) { p.classList.remove('u-hide'); p.classList.toggle('asi-pane-off', k !== i); });
+      /* v1.1.0 (R-09): a pane that holds a chart regrows its bars each time it is shown. */
+      if (ready && panes[i]) { var ch = $('[data-asi-chart]', panes[i]); if (ch && ch.__asiGrow) ch.__asiGrow(); }
     }
+    var ready = false;
     items.forEach(function (it, k) {
       it.setAttribute('tabindex', '0'); it.setAttribute('role', 'tab');
       it.addEventListener(opts.hover && !TOUCH ? 'mouseenter' : 'click', function (e) {
@@ -335,7 +358,7 @@
       });
       it.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); touched = true; show(k); } });
     });
-    show(cur);
+    show(cur); ready = true;
     if (opts.auto && !RM) {
       var visible = false;
       inView(root, function (on) { visible = on; }, { threshold: 0.3 });
@@ -353,6 +376,10 @@
       var targets = bars.map(function (b) { var dv = b.getAttribute('data-asi-value'); if (dv) return parseFloat(dv) + '%'; var h = b.style.height; if (h) return h; var ph = b.parentNode.getBoundingClientRect().height; return ph ? (b.getBoundingClientRect().height / ph * 100).toFixed(1) + '%' : getComputedStyle(b).height; });
       if (RM) return;
       bars.forEach(function (b) { b.style.transition = 'none'; b.style.height = '0%'; void b.offsetHeight; b.style.transition = ''; });
+      chart.__asiGrow = function () {
+        bars.forEach(function (b) { b.style.transition = 'none'; b.style.height = '0%'; void b.offsetHeight; b.style.transition = ''; });
+        bars.forEach(function (b, i) { setTimeout(function () { b.style.height = targets[i]; }, 80 + i * 90); });
+      };
       inView(chart, function (on, e, io) {
         if (!on) return; io.disconnect();
         bars.forEach(function (b, i) { setTimeout(function () { b.style.height = targets[i]; }, i * 90); });
@@ -493,4 +520,273 @@
       });
     }
   }
+
+  /* =====================================================================================================
+     v1.1.0 modules (review round, Phase 2)
+     ===================================================================================================== */
+  var DESK = window.matchMedia ? window.matchMedia('(min-width: 992px)') : { matches: true };
+  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+  /* The page is zoomed x1.333 at >=1920 (site head code). Layout px = screen px / zoom. */
+  function zoomOf() { var z = parseFloat(getComputedStyle(document.documentElement).zoom); return z > 0 ? z : 1; }
+  /* One rAF-throttled scroll/resize loop shared by every scrubbed module. */
+  var frameFns = [], framePending = false;
+  function onFrame(fn) {
+    frameFns.push(fn);
+    if (frameFns.length === 1) {
+      var kick = function () { if (framePending) return; framePending = true; requestAnimationFrame(function () { framePending = false; frameFns.forEach(function (f) { try { f(); } catch (e) {} }); }); };
+      window.addEventListener('scroll', kick, { passive: true });
+      window.addEventListener('resize', kick);
+      if (DESK.addEventListener) DESK.addEventListener('change', kick);
+      setTimeout(kick, 60);
+    }
+  }
+
+  /* ---------- R-02: nav eases up and fades on scroll down, returns on any scroll up ---------- */
+  function navAutoHide() {
+    if (RM) return;
+    var nav = $('.nav'); if (!nav) return;
+    var lastY = window.scrollY, acc = 0, hidden = false;
+    nav.style.transition = 'transform .45s ' + EASE + ',opacity .35s ' + EASE;
+    function menuOpen() { return !!$('.nav-mobile.asi-open, .nav-dd-menu.asi-open', nav) || !!nav.querySelector(':focus'); }
+    function set(h) {
+      if (h === hidden) return; hidden = h;
+      nav.style.transform = h ? 'translateY(calc(-100% - 28px))' : '';
+      nav.style.opacity = h ? '0' : '';
+      nav.style.pointerEvents = h ? 'none' : '';
+    }
+    window.addEventListener('scroll', function () {
+      var y = window.scrollY, d = y - lastY; lastY = y;
+      if (y < 80 || menuOpen()) { acc = 0; set(false); return; }
+      if ((d > 0) !== (acc > 0)) acc = 0;
+      acc += d;
+      if (acc > 10) set(true); else if (acc < -6) set(false);
+    }, { passive: true });
+    nav.addEventListener('focusin', function () { set(false); });
+  }
+
+  /* ---------- R-31 / R-32 / R-35: list rows scale, fade and sharpen into place once, one after another ---------- */
+  function cascades() {
+    if (RM || !('IntersectionObserver' in window)) return;
+    $$('[data-asi-cascade]').forEach(function (list) {
+      var kids = $$(':scope > *', list); if (!kids.length) return;
+      /* hide instantly (no transition, no stagger), then arm the staggered reveal */
+      kids.forEach(function (k) { k.style.transition = 'none'; });
+      list.classList.add('asi-cas-wait');
+      void list.offsetHeight;
+      kids.forEach(function (k, i) { k.style.transition = ''; k.style.transitionDelay = (i * 170) + 'ms'; });
+      inView(list, function (on, e, io) {
+        if (!on) return; io.disconnect();
+        requestAnimationFrame(function () { list.classList.remove('asi-cas-wait'); });
+        setTimeout(function () { kids.forEach(function (k) { k.style.transitionDelay = ''; k.style.transition = 'none'; }); }, 1000 + kids.length * 170);
+      }, { threshold: 0.35 });
+    });
+  }
+
+  /* ---------- R-14: Services cards start tucked beneath the card above, smaller and blurred, and grow,
+     sharpen and settle as you scroll (scrubbed both ways). Below 992 px: a plain stacked list. ---------- */
+  function parseRGBA(s) { var m = (s || '').match(/[\d.]+/g); if (!m) return null; return [+m[0], +m[1], +m[2], m.length > 3 ? +m[3] : 1]; }
+  function solidBehind(el) {
+    for (var a = el.parentElement; a; a = a.parentElement) { var c = parseRGBA(getComputedStyle(a).backgroundColor); if (c && c[3] > 0.99) return c; }
+    return [255, 255, 255, 1];
+  }
+  function stacks() {
+    if (RM) return;
+    $$('[data-asi-stack]').forEach(function (list) {
+      var cards = $$(':scope > *', list); if (cards.length < 2) return;
+      if (getComputedStyle(list).position === 'static') list.style.position = 'relative';
+      var own = parseRGBA(getComputedStyle(cards[0]).backgroundColor), under = solidBehind(list);
+      var solid = own && own[3] < 1 ? 'rgb(' + [0, 1, 2].map(function (k) { return Math.round(own[k] * own[3] + under[k] * (1 - own[3])); }).join(',') + ')' : '';
+      function reset() { cards.forEach(function (c) { c.style.transform = ''; c.style.filter = ''; c.style.opacity = ''; c.style.zIndex = ''; c.style.backgroundColor = ''; }); }
+      onFrame(function () {
+        if (!DESK.matches) { reset(); return; }
+        var lr = list.getBoundingClientRect(), z = list.offsetHeight ? lr.height / list.offsetHeight : 1, vh = window.innerHeight;
+        cards.forEach(function (c, i) {
+          c.style.zIndex = String(cards.length - i);
+          if (solid) c.style.backgroundColor = solid;
+          if (i === 0) return;
+          var top = lr.top + c.offsetTop * z;                       /* layout position, ignores our own transform */
+          var p = clamp((vh * 0.95 - top) / (vh * 0.45), 0, 1), e = 1 - Math.pow(1 - p, 2);
+          c.style.transformOrigin = '50% 0';
+          c.style.transform = 'translateY(' + (-(1 - e) * 150).toFixed(1) + 'px) scale(' + (0.86 + 0.14 * e).toFixed(4) + ')';
+          c.style.filter = e > 0.995 ? '' : 'blur(' + ((1 - e) * 8).toFixed(2) + 'px)';
+          c.style.opacity = (0.35 + 0.65 * e).toFixed(3);
+        });
+      });
+    });
+  }
+
+  /* ---------- R-16: statement pins for about one viewport while each word goes from 50% to full strength ---------- */
+  function readthroughs() {
+    if (RM) return;
+    $$('[data-asi-readthrough]').forEach(function (sec) {
+      var p = $('p, h2, h3', sec); if (!p) return;
+      var inner = p.parentNode;
+      var text = p.textContent.replace(/\s+/g, ' ').trim();
+      p.innerHTML = text.split(' ').map(function (w) { return '<span class="asi-rt">' + w + '</span>'; }).join(' ');
+      var words = $$('.asi-rt', p), n = words.length, pinned = null;
+      function layout() {
+        var on = DESK.matches;
+        if (on === pinned && !on) return;
+        pinned = on;
+        if (!on) {
+          ['height', 'paddingTop', 'paddingBottom', 'overflow'].forEach(function (k) { sec.style[k] = ''; });
+          ['position', 'top', 'height', 'display', 'flexDirection', 'justifyContent'].forEach(function (k) { inner.style[k] = ''; });
+          words.forEach(function (w) { w.style.opacity = ''; });
+          return;
+        }
+        var vh = window.innerHeight / zoomOf();
+        sec.style.paddingTop = '0px'; sec.style.paddingBottom = '0px'; sec.style.overflow = 'clip';
+        sec.style.height = Math.round(vh * 2) + 'px';
+        inner.style.position = 'sticky'; inner.style.top = '0px'; inner.style.height = Math.round(vh) + 'px';
+        inner.style.display = 'flex'; inner.style.flexDirection = 'column'; inner.style.justifyContent = 'center';
+      }
+      onFrame(function () {
+        layout(); if (!DESK.matches) return;
+        var r = sec.getBoundingClientRect(), total = r.height - window.innerHeight;
+        var pr = total > 0 ? clamp(-r.top / total, 0, 1) : 0;
+        words.forEach(function (w, i) { w.style.opacity = (0.5 + 0.5 * clamp(pr * (n + 2) - i, 0, 1)).toFixed(3); });
+      });
+    });
+  }
+
+  /* ---------- R-24: a Go Green line traces the existing rule as you scroll; markers turn green as it reaches them ---------- */
+  function progressLines() {
+    if (RM) return;
+    $$('[data-asi-progress]').forEach(function (list) {
+      var rule = $('[class*="-rule"]', list); if (!rule) return;
+      var markers = $$('[class*="-marker"]', list);
+      var fill = document.createElement('div'); fill.className = 'asi-progress-fill'; fill.setAttribute('aria-hidden', 'true');
+      list.insertBefore(fill, rule.nextSibling);
+      onFrame(function () {
+        var on = DESK.matches && getComputedStyle(rule).display !== 'none';
+        fill.style.display = on ? '' : 'none'; rule.style.opacity = on ? '0.5' : '';
+        if (!on) { markers.forEach(function (m) { m.style.backgroundColor = ''; }); return; }
+        var lr = list.getBoundingClientRect(), rr = rule.getBoundingClientRect(), z = list.offsetHeight ? lr.height / list.offsetHeight : 1;
+        var head = clamp(window.innerHeight * 0.55 - rr.top, 0, rr.height);
+        fill.style.left = ((rr.left - lr.left) / z).toFixed(1) + 'px'; fill.style.top = ((rr.top - lr.top) / z).toFixed(1) + 'px';
+        fill.style.width = (rr.width / z).toFixed(1) + 'px'; fill.style.height = (head / z).toFixed(1) + 'px';
+        markers.forEach(function (m) { var mr = m.getBoundingClientRect(); m.style.backgroundColor = rr.top + head >= mr.top + mr.height / 2 ? GREEN : ''; });
+      });
+    });
+  }
+
+  /* ---------- R-30: endless carousels. One copy of the cards sits on each side of the originals; when the track
+     comes to rest past the middle set, it jumps by exactly one set, so the view never changes. ---------- */
+  function loops() {
+    $$('[data-asi-loop]').forEach(function (track) {
+      var orig = $$(':scope > *', track); if (orig.length < 2) return;
+      function clone(el) {
+        var c = el.cloneNode(true);
+        c.setAttribute('aria-hidden', 'true'); c.classList.add('asi-clone');
+        [c].concat($$('*', c)).forEach(function (n) { n.classList.remove('asi-rv', 'asi-in'); n.removeAttribute('data-asi-video'); if (/^(A|BUTTON)$/.test(n.tagName)) n.setAttribute('tabindex', '-1'); });
+        c.style.transitionDelay = '';
+        return c;
+      }
+      var before = orig.map(clone), after = orig.map(clone);
+      before.forEach(function (c) { track.insertBefore(c, orig[0]); });
+      after.forEach(function (c) { track.appendChild(c); });
+      function setW() { return orig[0].offsetLeft - before[0].offsetLeft; }
+      function jump(d) {
+        var snap = track.style.scrollSnapType, beh = track.style.scrollBehavior;
+        track.style.scrollSnapType = 'none'; track.style.scrollBehavior = 'auto';
+        track.scrollLeft += d;
+        requestAnimationFrame(function () { track.style.scrollSnapType = snap; track.style.scrollBehavior = beh; });
+      }
+      function home() { var snap = track.style.scrollSnapType; track.style.scrollSnapType = 'none'; track.scrollLeft = setW(); requestAnimationFrame(function () { track.style.scrollSnapType = snap; }); }
+      function wrap() {
+        if (track.classList.contains('asi-drag')) return;
+        var W = setW(), s = track.scrollLeft;
+        if (W <= 0) return;
+        if (s < W * 0.5) jump(W); else if (s >= W * 1.5) jump(-W);
+      }
+      home();
+      window.addEventListener('load', home);
+      window.addEventListener('resize', function () { var W = setW(); var s = track.scrollLeft % W; track.scrollLeft = W + s; });
+      var t;
+      track.addEventListener('scroll', function () { clearTimeout(t); t = setTimeout(wrap, 160); }, { passive: true });
+      if ('onscrollend' in window) track.addEventListener('scrollend', wrap);
+    });
+  }
+
+  /* ---------- R-34: KPI hero chips orbit the ASI mark slowly on a shared ellipse, staying upright ---------- */
+  function orbits() {
+    if (RM) return;
+    $$('[data-asi-orbit]').forEach(function (layer) {
+      var mark = $('[class*="mark"]', layer); if (!mark) return;
+      var chips = $$(':scope > *', layer).filter(function (c) { return c !== mark; });
+      var RX = 230, RY = 120, PERIOD = 70000;
+      var cx, cy, base = [], t0 = null, visible = true, started = false;
+      function measure() {
+        cx = mark.offsetLeft + mark.offsetWidth / 2; cy = mark.offsetTop + mark.offsetHeight / 2;
+        base = chips.map(function (c) { var bx = c.offsetLeft + c.offsetWidth / 2, by = c.offsetTop + c.offsetHeight / 2; return { x: bx, y: by, a: Math.atan2((by - cy) / RY, (bx - cx) / RX) }; });
+      }
+      function frame(now) {
+        if (!visible || document.hidden || getComputedStyle(layer).display === 'none') { t0 = null; requestAnimationFrame(frame); return; }
+        if (t0 === null) t0 = now - (frame.elapsed || 0);
+        var el = now - t0; frame.elapsed = el;
+        var ease = clamp(el / 2200, 0, 1); ease = ease * ease * (3 - 2 * ease);       /* glide from the drawn spots onto the orbit */
+        var ang = (el / PERIOD) * Math.PI * 2;
+        chips.forEach(function (c, i) {
+          var b = base[i], tx = cx + RX * Math.cos(b.a + ang) - b.x, ty = cy + RY * Math.sin(b.a + ang) - b.y;
+          c.style.transform = 'translate(' + (tx * ease).toFixed(2) + 'px,' + (ty * ease).toFixed(2) + 'px)';
+        });
+        requestAnimationFrame(frame);
+      }
+      inView(layer, function (on) { visible = on; }, { threshold: 0 });
+      /* wait for the hero load-in (which also animates transform) to finish */
+      setTimeout(function () {
+        if (started) return; started = true;
+        chips.forEach(function (c) { c.style.transition = 'none'; });
+        measure(); window.addEventListener('resize', measure);
+        requestAnimationFrame(frame);
+      }, 1800);
+    });
+  }
+
+  /* ---------- R-41: Partners diagram. Dashed lines flow toward the ASI node; readings drift within a few percent ---------- */
+  function diagrams() {
+    if (RM) return;
+    var NS = 'http://www.w3.org/2000/svg';
+    $$('[data-asi-diagram]').forEach(function (d) {
+      var img = $('img[class*="lines"]', d), node = $('[class*="node"]', d);
+      if (img && node && window.fetch) {
+        fetch(img.src, { mode: 'cors' }).then(function (r) { return r.text(); }).then(function (txt) {
+          var holder = document.createElement('div'); holder.innerHTML = txt;
+          var svg = holder.querySelector('svg'); if (!svg) return;
+          svg.setAttribute('class', img.className); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('focusable', 'false');
+          img.parentNode.replaceChild(svg, img);
+          var vb = svg.viewBox.baseVal, sr = svg.getBoundingClientRect(), nr = node.getBoundingClientRect();
+          if (!sr.width) return;
+          var c = { x: vb.x + (nr.left + nr.width / 2 - sr.left) / sr.width * vb.width, y: vb.y + (nr.top + nr.height / 2 - sr.top) / sr.height * vb.height };
+          $$('path', svg).forEach(function (p) {
+            var pts = (p.getAttribute('d').match(/M\s*-?[\d.]+[ ,]+-?[\d.]+/g) || []).map(function (s) { return s.replace(/^M\s*/, '').split(/[ ,]+/).map(Number); });
+            if (pts.length < 2) return;
+            var a = pts[0], b = pts[1], best = -1, i, j;
+            for (i = 0; i < pts.length; i++) for (j = i + 1; j < pts.length; j++) { var dd = Math.pow(pts[i][0] - pts[j][0], 2) + Math.pow(pts[i][1] - pts[j][1], 2); if (dd > best) { best = dd; a = pts[i]; b = pts[j]; } }
+            var m = svg.getScreenCTM().inverse().multiply(p.getScreenCTM());
+            function tf(q) { var pt = svg.createSVGPoint(); pt.x = q[0]; pt.y = q[1]; return pt.matrixTransform(m); }
+            var A = tf(a), B = tf(b);
+            if (Math.hypot(A.x - c.x, A.y - c.y) < Math.hypot(B.x - c.x, B.y - c.y)) { var tmp = A; A = B; B = tmp; }   /* far end -> ASI */
+            var line = document.createElementNS(NS, 'line');
+            line.setAttribute('x1', A.x.toFixed(2)); line.setAttribute('y1', A.y.toFixed(2)); line.setAttribute('x2', B.x.toFixed(2)); line.setAttribute('y2', B.y.toFixed(2));
+            line.setAttribute('stroke', p.getAttribute('stroke') || GREEN); line.setAttribute('stroke-width', '1'); line.setAttribute('class', 'asi-flow');
+            svg.appendChild(line); p.style.display = 'none';
+          });
+        }).catch(function () {});
+      }
+      /* readings drift: every number in the chips except the "Illustrative data" tag */
+      $$('p', d).forEach(function (el) {
+        if (/illustrative/i.test(el.className + el.textContent)) return;
+        var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false), nd, tn = null;
+        while ((nd = walker.nextNode())) { if (/\d/.test(nd.nodeValue)) { tn = nd; break; } }
+        if (!tn) return;
+        var orig = tn.nodeValue, mm = orig.match(/\d+(\.\d+)?/); if (!mm) return;
+        var bv = parseFloat(mm[0]), dec = mm[1] ? mm[1].length - 1 : 0, v = bv, lo = bv * 0.95, hi = bv * 1.05;
+        if (dec === 0 && hi - lo < 2) { lo = Math.max(0, bv - 1); hi = bv + 1; }
+        setInterval(function () { if (document.hidden) return; v = clamp(v + (Math.random() - 0.5) * (hi - lo) * 0.35, lo, hi); tn.nodeValue = orig.replace(mm[0], dec ? v.toFixed(dec) : String(Math.round(v))); }, 1700 + Math.random() * 1000);
+      });
+    });
+  }
+
+  onReady(boot);
 })();
