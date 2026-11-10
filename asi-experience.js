@@ -5,6 +5,7 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.1.1  2026-11-10  Every carousel with visible arrows loops endlessly (Ben's answer to Q6), not just the two marked ones.
  * v1.1.0  2026-11-10  Review round, Phase 2 (motion on existing markup). New modules: nav hides on scroll down and
  *                     returns on scroll up (R-02); Services cards grow, sharpen and settle as you scroll (R-14,
  *                     data-asi-stack); Services statement pins and reads through word by word (R-16,
@@ -35,7 +36,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.1.0';
+  window.__asiExperience = '1.1.1';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -673,7 +674,13 @@
   /* ---------- R-30: endless carousels. One copy of the cards sits on each side of the originals; when the track
      comes to rest past the middle set, it jumps by exactly one set, so the view never changes. ---------- */
   function loops() {
-    $$('[data-asi-loop]').forEach(function (track) {
+    /* v1.1.1 (Q6): every carousel with its own arrows loops, plus anything marked data-asi-loop. Arrows hidden in the
+       Designer (e.g. Home careers, R-12) mean the row is swipe-only and does not loop. */
+    $$('[data-asi-loop], [data-asi-carousel]').filter(function (track) {
+      if (track.hasAttribute('data-asi-loop')) return true;
+      var arrow = $('[data-asi-next], [data-asi-prev]', closestSection(track));
+      return !!arrow && !arrow.closest('.u-hide');
+    }).forEach(function (track) {
       var orig = $$(':scope > *', track); if (orig.length < 2) return;
       function clone(el) {
         var c = el.cloneNode(true);
@@ -681,6 +688,14 @@
         [c].concat($$('*', c)).forEach(function (n) { n.classList.remove('asi-rv', 'asi-in'); n.removeAttribute('data-asi-video'); if (/^(A|BUTTON)$/.test(n.tagName)) n.setAttribute('tabindex', '-1'); });
         c.style.transitionDelay = '';
         return c;
+      }
+      /* Grid tracks (Partners, Contact at desktop) would wrap the copies onto new rows: lay them out as one row
+         of columns the same width as the designed ones. */
+      var gcs = getComputedStyle(track);
+      if (gcs.display === 'grid' || gcs.display === 'inline-grid') {
+        var n = gcs.gridTemplateColumns.split(' ').filter(Boolean).length || orig.length, gap = parseFloat(gcs.columnGap) || 0;
+        track.style.gridTemplateColumns = 'none'; track.style.gridAutoFlow = 'column';
+        track.style.gridAutoColumns = 'calc((100% - ' + ((n - 1) * gap) + 'px) / ' + n + ')';
       }
       var before = orig.map(clone), after = orig.map(clone);
       before.forEach(function (c) { track.insertBefore(c, orig[0]); });
