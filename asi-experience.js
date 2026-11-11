@@ -5,6 +5,12 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.10.0 2026-11-11  Careers (Ben's QA): the Contact careers cards load their ?role= again (v1.8.0's same-page glide
+ *                     swallowed the query), arriving on a #hash lands the target below the desktop nav, and the
+ *                     application intro names the chosen role ("You're applying for Engineering.").
+ *                     New careersModal (Ben: "the job cards should open an apply form modal"): Contact's
+ *                     application section becomes a modal the careers cards open, role filled in; Home's cards
+ *                     arrive on /contact?role=x#apply and it opens on load.
  * v1.9.0  2026-11-11  FAQs open and close smoothly (Ben: "make all the motion for opening FAQs smooth and eased"): the answer's
  *                     height, padding and text ease together over 0.52 s, the item that closes moves at the same time,
  *                     and the +/- icon turns half a turn, swapping at the midpoint.
@@ -86,7 +92,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.9.0';
+  window.__asiExperience = '1.10.0';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -191,6 +197,16 @@
     '.asi-video{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .6s}',
     '.asi-video.asi-on{opacity:1}',
     '[data-asi-chips]>*{will-change:transform}',
+    /* v1.10.0 careers apply modal */
+    'html.asi-modal-lock{overflow:hidden}',
+    '.asi-modal{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(23,29,34,0);-webkit-backdrop-filter:blur(0);backdrop-filter:blur(0);transition:background-color .42s ' + EASE + ',backdrop-filter .42s ' + EASE + ',-webkit-backdrop-filter .42s ' + EASE + '}',
+    '.asi-modal[hidden]{display:none}',
+    '.asi-modal.is-open{background:rgba(23,29,34,.55);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}',
+    '.asi-modal-dialog{position:relative;width:min(1100px,100%);max-height:calc(100svh - 32px);overflow:auto;overscroll-behavior:contain;border-radius:16px;padding:56px 8px 24px;opacity:0;transform:translateY(24px) scale(.98);transition:opacity .4s ' + EASE + ',transform .5s ' + EASE + ';box-shadow:0 24px 80px rgba(0,0,0,.28)}',
+    '.asi-modal.is-open .asi-modal-dialog{opacity:1;transform:none}',
+    '.asi-modal-x{position:absolute;top:12px;right:12px;width:40px;height:40px;display:flex;align-items:center;justify-content:center;border:0;border-radius:8px;background:rgba(23,29,34,.06);color:#171d22;cursor:pointer;transition:background-color .2s}',
+    '.asi-modal-x:hover{background:rgba(23,29,34,.12)}',
+    '@media (max-width:767px){.asi-modal{padding:0;align-items:flex-end}.asi-modal-dialog{max-height:calc(100svh - 24px);border-radius:16px 16px 0 0;padding-top:52px;transform:translateY(40px)}}',
     '.asi-live{position:absolute;left:0;top:0;width:100%;height:100%;border:0;opacity:0;transition:opacity .8s;background:transparent}',
     '.asi-live.asi-on{opacity:1}',
     '.asi-live-on [data-asi-hotspot],.asi-live-on [data-asi-tag]{display:none!important}',
@@ -241,7 +257,7 @@
   /* v1.1.0: modules start from the last line of this file, so every variable below is set even when the
      script runs after the page has already loaded. */
   function boot() {
-    [forms, photoChips, navMenus, navPanels, navAutoHide, reveals, splitHeads, eyebrowPulse, faqs, loops, carousels, selectors, accordions, charts, counters, hotspots, videos, liveViews, liveChips, followers,
+    [forms, careersModal, photoChips, navMenus, navPanels, navAutoHide, reveals, splitHeads, eyebrowPulse, faqs, loops, carousels, selectors, accordions, charts, counters, hotspots, videos, liveViews, liveChips, followers,
       cascades, stacks, readthroughs, progressLines, orbits, diagrams, sequences, anchors]
       .forEach(function (fn) { safe(fn.name, fn)(); });
   }
@@ -358,12 +374,90 @@
           if (o2.value.toLowerCase() === want || o2.text.toLowerCase().replace(/\s+/g, '-') === want) { sel.selectedIndex = i; break; }
         }
       }
+      /* v1.10.0 (Ben's QA: the three careers cards looked like they all went to the same form): the intro under
+         "Apply to ASI" names the chosen role, so it reads at the top of the form. No role, or "Not sure yet": unchanged. */
+      var host = sel.closest('section') || document, intro = $('[data-asi-role-intro]', host);
+      if (!intro) intro = $$('p', host).filter(function (p) { return /attach your resume/i.test(p.textContent); })[0];
+      if (intro) {
+        var lead = document.createElement('span'); lead.className = 'asi-role-lead'; intro.insertBefore(lead, intro.firstChild);
+        var say = function () {
+          var o = sel.options[sel.selectedIndex], real = o && o.value && !/not-sure|not listed/i.test(o.value);
+          lead.textContent = real ? 'You\u2019re applying for ' + o.text + '. ' : '';
+        };
+        say(); sel.addEventListener('change', say);
+      }
     }
     $$('.faq-item').forEach(function (it) {
       var a = $('.faq-a', it);
       if (a && /^\s*\[COPY PENDING/i.test(a.textContent)) { it.style.display = 'none'; it.setAttribute('data-asi-pending', ''); }
     });
     $$('input[placeholder="Example text"], textarea[placeholder="Example text"]').forEach(function (f) { f.removeAttribute('placeholder'); });
+  }
+
+  /* ---------- 0c. careers apply modal (v1.10.0, Ben: "the job cards should open an apply form modal") ----------
+     On the page that holds the application section (#apply, Contact), its content moves into a modal and the
+     section is hidden. Careers card links (…?role=x#apply) open the modal with that role chosen; arriving on
+     /contact?role=x#apply (Home's cards) opens it on load. The form is moved, not copied, so Webflow's form
+     handling stays bound. Esc, the close button or a click outside closes it; focus returns to the card. */
+  function careersModal() {
+    var sec = document.getElementById('apply'), sel = document.getElementById('Role');
+    if (!sec || !sel) return;
+    var inner = sec.firstElementChild; if (!inner) return;
+    var bg = getComputedStyle(sec).backgroundColor;
+    var wrap = document.createElement('div'); wrap.className = 'asi-modal'; wrap.setAttribute('hidden', '');
+    var dlg = document.createElement('div'); dlg.className = 'asi-modal-dialog'; dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true');
+    dlg.style.backgroundColor = bg && bg !== 'rgba(0, 0, 0, 0)' ? bg : '#f4f3f2';
+    var h = $('h2, h3', inner); if (h) { if (!h.id) h.id = 'asi-apply-title'; dlg.setAttribute('aria-labelledby', h.id); }
+    var x = document.createElement('button'); x.type = 'button'; x.className = 'asi-modal-x'; x.setAttribute('aria-label', 'Close');
+    x.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M2 2l14 14M16 2L2 16" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>';
+    dlg.appendChild(x); dlg.appendChild(inner); wrap.appendChild(dlg); document.body.appendChild(wrap);
+    sec.style.display = 'none'; sec.setAttribute('data-asi-moved', 'modal');
+    $$('.asi-rv', dlg).forEach(function (e) { e.classList.remove('asi-rv'); e.style.opacity = ''; e.style.transform = ''; });
+    var back = null, open = false, T = null;
+    function setRole(r) {
+      if (!r) return;
+      for (var i = 0; i < sel.options.length; i++) { var o = sel.options[i]; if (o.value.toLowerCase() === r || o.text.toLowerCase().replace(/\s+/g, '-') === r) { sel.selectedIndex = i; break; } }
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    function show(r, from) {
+      setRole(r); back = from || document.activeElement; clearTimeout(T);
+      wrap.removeAttribute('hidden'); document.documentElement.classList.add('asi-modal-lock');
+      void wrap.offsetHeight; wrap.classList.add('is-open'); open = true;
+      dlg.scrollTop = 0;
+      T = setTimeout(function () { var f = $('input:not([type=hidden]), select, textarea', dlg); if (f) try { f.focus({ preventScroll: true }); } catch (e) { f.focus(); } }, RM ? 0 : 320);
+    }
+    function hide() {
+      if (!open) return; open = false; clearTimeout(T);
+      wrap.classList.remove('is-open'); document.documentElement.classList.remove('asi-modal-lock');
+      T = setTimeout(function () { wrap.setAttribute('hidden', ''); }, RM ? 0 : 420);
+      if (back && back.focus) try { back.focus({ preventScroll: true }); } catch (e) {}
+      if (history.replaceState && /#apply/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
+    }
+    x.addEventListener('click', hide);
+    wrap.addEventListener('mousedown', function (e) { if (e.target === wrap) hide(); });
+    document.addEventListener('keydown', function (e) {
+      if (!open) return;
+      if (e.key === 'Escape') { e.preventDefault(); hide(); return; }
+      if (e.key === 'Tab') {   /* keep focus inside the dialog */
+        var f = $$('button, input:not([type=hidden]), select, textarea, a[href]', dlg).filter(function (n) { return n.offsetParent !== null; });
+        if (!f.length) return; var a = f[0], z = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); } else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+      }
+    });
+    /* careers links on this page open the modal instead of loading the page (capture: ahead of anchors() and Webflow) */
+    document.addEventListener('click', function (e) {
+      if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      var a = e.target.closest && e.target.closest('a[href*="#apply"]'); if (!a) return;
+      if (a.pathname.replace(/\/$/, '') !== location.pathname.replace(/\/$/, '')) return;
+      var m = /[?&]role=([^&#]*)/.exec(a.search);
+      e.preventDefault(); e.stopPropagation();
+      show(m ? decodeURIComponent(m[1]).toLowerCase() : '', a);
+    }, true);
+    if (/^#apply$/.test(location.hash)) {
+      if (history.scrollRestoration) history.scrollRestoration = 'manual';
+      var m0 = /[?&]role=([^&#]*)/.exec(location.search);
+      setTimeout(function () { show(m0 ? decodeURIComponent(m0[1]).toLowerCase() : '', null); }, 60);
+    }
   }
 
   /* ---------- 1. nav: services dropdown + mobile menu ---------- */
@@ -1111,7 +1205,10 @@
       if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       var a = e.target.closest && e.target.closest('a[href*="#"]'); if (!a) return;
       var href = a.getAttribute('href'), i = href.indexOf('#'), id = href.slice(i + 1);
+      /* v1.10.0: a link that changes the query (Contact careers cards: ?role=engineering#apply) must load, or the role is never read */
       if (!id || (i > 0 && a.pathname.replace(/\/$/, '') !== location.pathname.replace(/\/$/, ''))) return;
+      /* ...and Webflow's own smooth-scroll would catch it as a same-page link, so keep it from Webflow and let the browser load it */
+      if (i > 0 && a.search !== location.search) { e.stopPropagation(); return; }
       if (a.hostname && a.hostname !== location.hostname) return;
       var t = document.getElementById(id); if (!t || a.closest('.nav-mobile')) return;
       e.preventDefault(); e.stopPropagation();
@@ -1121,6 +1218,21 @@
         if (history.replaceState) history.replaceState(null, '', '#' + id);
       });
     }, true);
+    /* v1.10.0: arriving with a #hash (e.g. /contact?role=engineering#apply), land the target 16 px below the desktop nav */
+    var land = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+    if (land && land.getAttribute('data-asi-moved')) land = null;   /* #apply now opens the modal */
+    if (land && DESK.matches) window.addEventListener('load', function () {
+      /* Webflow scrolls to the hash itself on load and images keep settling, so re-check for 1.5 s; any reader input stops it */
+      var quit = false, stop = function () { quit = true; };
+      ['wheel', 'touchstart', 'keydown', 'mousedown'].forEach(function (e) { window.addEventListener(e, stop, { once: true, passive: true }); });
+      [150, 450, 800, 1200, 1600].forEach(function (t) {
+        setTimeout(function () {
+          if (quit) return; var nav = $('.nav'); if (!nav) return;
+          var nb = nav.getBoundingClientRect().bottom, top = land.getBoundingClientRect().top;
+          if (nb > 0 && Math.abs(top - (nb + 16)) > 3) { var h = document.documentElement, sb = h.style.scrollBehavior; h.style.scrollBehavior = 'auto'; window.scrollTo(0, window.scrollY + top - nb - 16); h.style.scrollBehavior = sb; }
+        }, t);
+      });
+    });
   }
 
   /* ---------- R-02: nav eases up and fades on scroll down, returns on any scroll up ---------- */
