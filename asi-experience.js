@@ -5,6 +5,8 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.3.0  2026-11-10  Review round, Phase 4: pinned scroll-scrubbed frame sequence (R-28, data-asi-sequence; test page only
+ *                     until approved). Carousel loops skip hidden cards (R-07 hid the four old Home machine cards).
  * v1.2.0  2026-11-10  Review round, Phase 3 (live scenes, Aggregate). The hero rocks are the live visualizer scene, opened
  *                     on the still's frame, turning with page scroll and drag; the Basalt Rock chips ride their rocks
  *                     (R-20/21). A glass card follows the plant's selected item with its render and a drifting reading
@@ -41,7 +43,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.2.0';
+  window.__asiExperience = '1.3.0';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -142,6 +144,8 @@
     '@keyframes asiFlow{to{stroke-dashoffset:-14}}',
     '.asi-flow{stroke-dasharray:7 7;animation:asiFlow 1.1s linear infinite}',
     '.asi-rt{transition:opacity .15s linear}',
+    /* v1.3.0 */
+    '[data-asi-seq-tick]{opacity:.35;transition:opacity .3s}', '[data-asi-seq-tick].asi-ticked{opacity:1}',
     '@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}html.asi-js .asi-rv{opacity:1;transform:none;transition:none}.asi-wi{transform:none;transition:none}.asi-ring{animation:none}}'
   ];
   var st = document.createElement('style');
@@ -180,7 +184,7 @@
      script runs after the page has already loaded. */
   function boot() {
     [navMenus, navAutoHide, reveals, splitHeads, eyebrowPulse, faqs, loops, carousels, selectors, accordions, charts, counters, hotspots, videos, liveViews, liveChips, followers,
-      cascades, stacks, readthroughs, progressLines, orbits, diagrams]
+      cascades, stacks, readthroughs, progressLines, orbits, diagrams, sequences]
       .forEach(function (fn) { safe(fn.name, fn)(); });
   }
 
@@ -853,7 +857,7 @@
       var arrow = $('[data-asi-next], [data-asi-prev]', closestSection(track));
       return !!arrow && !arrow.closest('.u-hide');
     }).forEach(function (track) {
-      var orig = $$(':scope > *', track); if (orig.length < 2) return;
+      var orig = $$(':scope > *', track).filter(function (el) { return getComputedStyle(el).display !== 'none'; }); if (orig.length < 2) return;   /* v1.3.0: hidden cards stay out */
       function clone(el) {
         var c = el.cloneNode(true);
         c.setAttribute('aria-hidden', 'true'); c.classList.add('asi-clone');
@@ -971,6 +975,94 @@
         var bv = parseFloat(mm[0]), dec = mm[1] ? mm[1].length - 1 : 0, v = bv, lo = bv * 0.95, hi = bv * 1.05;
         if (dec === 0 && hi - lo < 2) { lo = Math.max(0, bv - 1); hi = bv + 1; }
         setInterval(function () { if (document.hidden) return; v = clamp(v + (Math.random() - 0.5) * (hi - lo) * 0.35, lo, hi); tn.nodeValue = orig.replace(mm[0], dec ? v.toFixed(dec) : String(Math.round(v))); }, 1700 + Math.random() * 1000);
+      });
+    });
+  }
+
+
+  /* ---------- R-28: a pinned, scroll-scrubbed frame sequence (v1.3.0) ----------
+     data-asi-sequence="<frame url with {n}>|<count>[|<pad>]" on a section. At 992 px and up the section pins for
+     three viewports while the frames play on a canvas; elements marked data-asi-seq-card="<from>-<to>|left|right"
+     fade in over their frame range on that side, and [data-asi-seq-tick="<frame>"] rows tick at their frame.
+     Everything else in the section except its head is set aside while pinned. Phones and reduced motion keep the
+     section as designed. */
+  function sequences() {
+    if (RM) return;
+    $$('[data-asi-sequence]').forEach(function (sec) {
+      var cfg = sec.getAttribute('data-asi-sequence').split('|'), tpl = cfg[0], count = parseInt(cfg[1], 10) || 0, pad = parseInt(cfg[2], 10) || 4;
+      if (!tpl || !count) return;
+      var head = sec.firstElementChild, stage = null, canvas, ctx, frames = [], loaded = 0, cur = -1, built = false, on = null;
+      var cards = $$('[data-asi-seq-card]', sec).map(function (el) {
+        var a = el.getAttribute('data-asi-seq-card').split('|'), r = a[0].split('-');
+        return { el: el, from: +r[0], to: +r[1], side: a[1] || 'right', home: el.parentNode, next: el.nextSibling };
+      });
+      var ticks = $$('[data-asi-seq-tick]', sec).map(function (el) { return { el: el, at: +el.getAttribute('data-asi-seq-tick') }; });
+      function url(n) { var s = String(n); while (s.length < pad) s = '0' + s; return tpl.replace('{n}', s); }
+      function load() {
+        for (var i = 0; i < count; i++) (function (i) {
+          var im = new Image(); im.crossOrigin = 'anonymous'; im.decoding = 'async';
+          im.onload = function () { frames[i] = im; loaded++; if (i === cur || cur < 0) draw(cur < 0 ? 0 : cur, true); };
+          im.src = url(i);
+        })(i);
+      }
+      function build() {
+        built = true;
+        stage = document.createElement('div'); stage.className = 'asi-seq-stage';
+        stage.style.cssText = 'position:sticky;top:0;width:100%;overflow:hidden';
+        canvas = document.createElement('canvas'); canvas.setAttribute('aria-hidden', 'true');
+        canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
+        stage.appendChild(canvas); ctx = canvas.getContext('2d');
+        sec.insertBefore(stage, head ? head.nextSibling : sec.firstChild);
+        load();
+      }
+      function draw(f, force) {
+        if (f === cur && !force) return;
+        var im = frames[f];
+        if (!im) { for (var d = 1; d < count && !im; d++) im = frames[f - d] || frames[f + d]; }
+        cur = f; if (!im) return;
+        var W = canvas.width, H = canvas.height, s = Math.min(W / im.naturalWidth, H / im.naturalHeight);
+        var w = im.naturalWidth * s, h = im.naturalHeight * s;
+        ctx.clearRect(0, 0, W, H); ctx.drawImage(im, (W - w) / 2, (H - h) / 2, w, h);
+      }
+      function layout() {
+        var want = DESK.matches;
+        if (want === on) return;
+        on = want;
+        var rest = $$(':scope > *', sec).filter(function (el) { return el !== head && el !== stage; });
+        if (!want) {
+          if (!built) return;
+          stage.style.display = 'none'; sec.style.height = ''; sec.style.overflow = ''; sec.style.paddingBottom = '';
+          cards.forEach(function (c) { c.home.insertBefore(c.el, c.next); c.el.style.cssText = ''; });
+          rest.forEach(function (el) { el.style.display = ''; });
+          return;
+        }
+        if (!built) build();
+        stage.style.display = '';
+        rest.forEach(function (el) { el.style.display = 'none'; });
+        cards.forEach(function (c) {
+          stage.appendChild(c.el);
+          c.el.style.cssText = 'position:absolute;top:50%;' + (c.side === 'left' ? 'left' : 'right') + ':max(20px,calc(50% - 680px));transform:translateY(-50%);max-width:420px;opacity:0;transition:opacity .45s, transform .45s;pointer-events:none;z-index:1';
+        });
+      }
+      function size() {
+        if (!on) return;
+        var vh = window.innerHeight / zoomOf(), dpr = Math.min(2, window.devicePixelRatio || 1);
+        stage.style.height = Math.round(vh) + 'px';
+        sec.style.overflow = 'clip'; sec.style.paddingBottom = '0px';
+        sec.style.height = Math.round((head ? head.offsetHeight : 0) + vh * 4) + 'px';
+        var cw = Math.round(stage.clientWidth * dpr), ch = Math.round(vh * dpr);
+        if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; draw(Math.max(0, cur), true); }
+      }
+      window.addEventListener('resize', function () { size(); });
+      onFrame(function () {
+        layout(); if (!on) return; size();
+        var r = stage.parentNode.getBoundingClientRect(), top = (head ? head.offsetHeight : 0) * zoomOf();
+        var total = r.height - top - window.innerHeight;
+        var pr = total > 0 ? clamp((-r.top - top) / total, 0, 1) : 0;
+        var f = Math.min(count - 1, Math.round(pr * (count - 1)));
+        draw(f);
+        cards.forEach(function (c) { var vis = f >= c.from && f <= c.to; c.el.style.opacity = vis ? '1' : '0'; c.el.style.pointerEvents = vis ? 'auto' : 'none'; c.el.style.transform = 'translateY(' + (vis ? '-50%' : 'calc(-50% + 16px)') + ')'; });
+        ticks.forEach(function (t) { t.el.classList.toggle('asi-ticked', f >= t.at); });
       });
     });
   }
