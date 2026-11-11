@@ -5,6 +5,13 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.6.0  2026-11-11  Nav v2 (Ben, N1/N4): new navPanels module. Past 120 px of scroll the desktop bar eases down to
+ *                     max(420px, 30vw) with the logo clipped to the ASI mark (0.8 s ease-in-out; widens again under
+ *                     60 px). Services and About open inside the bar: it widens back to full, grows to the panel and
+ *                     the panel fades in; hover (140 ms delay), tap (first tap opens) and keyboard (Enter/Space/Arrow,
+ *                     Esc). Service rows swap a preview picture. Phones: Services and About are expanding groups in
+ *                     the Menu panel. Hide-on-scroll now runs on phones only (its inline transition was cancelling
+ *                     the narrowing).
  * v1.5.1  2026-11-11  Photo chips: a chip that would sit on another pin's dot or another chip moves to the other side of
  *                     its own point (the Head Drive chip did, at tablet widths, once pushed clear of the heading).
  * v1.5.0  2026-11-11  Aggregate "Automation control you can see" is now the stacker photo (Ben, A1-A4): new photoChips
@@ -58,11 +65,13 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.5.1';
+  window.__asiExperience = '1.6.0';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
   var EASE = 'cubic-bezier(.2,.7,.2,1)';
+  /* v1.6.0: the nav's narrowing; ease-in-out so it neither snaps away nor lands hard (Ben: "smoother") */
+  var NAV_MOVE = '.8s cubic-bezier(.65,.05,.25,1)';
   var GREEN = '#8ae14d';
   var ARROW_HOVER = 'https://cdn.prod.website-files.com/6ae0b8e3255cc1be07d5b192/6af290e36fcffdb374e4df3d_btn-arrow-green.svg';
 
@@ -104,6 +113,20 @@
     '.nav-mobile.asi-open{display:flex}',
     '.nav-dd-menu{opacity:0;transform:translateY(-6px);transition:opacity .2s ' + EASE + ',transform .2s ' + EASE + '}',
     '.nav-dd-menu.asi-show{opacity:1;transform:none}',
+    /* v1.6.0: nav v2. The structure is styled in Webflow; these are the states the script sets (a Webflow combo
+       that no element carries at publish time may not be published, so the states live here). */
+    '.nav[data-asi-nav].is-narrow{max-width:max(420px,calc(30vw / var(--asi-zoom, 1)))}',
+    '.nav[data-asi-nav].is-open{background-color:rgba(23,29,34,.92)}',
+    '.nav-logo-link.is-narrow{width:68px}',
+    '.nav-caret.is-active,.nav-caret.is-open{transform:translateY(1px) rotate(225deg)}',
+    '.nav-panel.is-open{display:grid}',
+    '.nav-panel.is-shown{opacity:1;transform:none}',
+    '.nav-item.is-hover{background-color:rgba(244,243,242,.08)}',
+    '.nav-item:focus-visible,.nav-trigger:focus-visible{outline:2px solid ' + GREEN + ';outline-offset:-2px}',
+    '.nav-preview-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .35s ' + EASE + '}',
+    '.nav-preview-img.is-on{opacity:1}',
+    '.nav-mgroup-list.is-open{display:flex}',
+    '@media (prefers-reduced-motion: reduce){.nav,.nav-logo-link,.nav-panels,.nav-panel,.nav-preview-img{transition:none!important}}',
     /* v1.0.7 (R-01): arrow buttons. The square does not move; on hover it turns Go Green with a dark arrow.
        The hover art is the site's own btn-arrow-green.svg, painted behind the icon; object-position slides
        the icon's own art out of its box so the green one shows. Call buttons are not arrow icons and keep
@@ -198,7 +221,7 @@
   /* v1.1.0: modules start from the last line of this file, so every variable below is set even when the
      script runs after the page has already loaded. */
   function boot() {
-    [forms, photoChips, navMenus, navAutoHide, reveals, splitHeads, eyebrowPulse, faqs, loops, carousels, selectors, accordions, charts, counters, hotspots, videos, liveViews, liveChips, followers,
+    [forms, photoChips, navMenus, navPanels, navAutoHide, reveals, splitHeads, eyebrowPulse, faqs, loops, carousels, selectors, accordions, charts, counters, hotspots, videos, liveViews, liveChips, followers,
       cascades, stacks, readthroughs, progressLines, orbits, diagrams, sequences]
       .forEach(function (fn) { safe(fn.name, fn)(); });
   }
@@ -339,8 +362,117 @@
         btn.setAttribute('aria-expanded', on ? 'true' : 'false');
         btn.textContent = on ? 'Close' : 'Menu';
       });
-      $$('a', panel).forEach(function (a) { a.addEventListener('click', function () { panel.classList.remove('asi-open'); btn.textContent = 'Menu'; }); });
+      $$('a:not([data-asi-mgroup])', panel).forEach(function (a) { a.addEventListener('click', function () { panel.classList.remove('asi-open'); btn.textContent = 'Menu'; }); });
     });
+  }
+
+  /* ---------- 1b. nav v2 (v1.6.0): the bar narrows on scroll and its menus open inside it ----------
+     .nav[data-asi-nav] holds triggers [data-asi-panel="id"] and, in .nav-panels, panels [data-asi-panel-id="id"].
+     Desktop (992+): past 80 px of scroll the bar takes .is-narrow (Webflow combo: narrow width, logo clipped to the
+     ASI mark). Opening a panel widens the bar again (.is-open), grows .nav-panels to the panel's height and fades
+     the panel in (.is-open then .is-shown). Hover opens after a short delay; touch opens on the first tap and
+     follows the link on the second; Enter, Space or ArrowDown opens from the keyboard, arrows move through the
+     links, Esc closes and returns focus. Rows with data-asi-preview="url" swap the panel's preview picture.
+     Phones keep the Menu panel; [data-asi-mgroup] buttons there open and close their group. */
+  function navPanels() {
+    $$('[data-asi-mgroup]').forEach(function (b) {
+      var g = b.parentNode; b.setAttribute('aria-expanded', 'false');
+      b.addEventListener('click', function (e) { e.preventDefault(); var on = g.classList.toggle('is-open'); $$('.nav-mgroup-list, .nav-caret', g).forEach(function (x) { x.classList.toggle('is-open', on); }); b.setAttribute('aria-expanded', on ? 'true' : 'false'); });
+    });
+    var nav = $('.nav[data-asi-nav]'); if (!nav) return;
+    var logo = $('.nav-logo-link', nav), box = $('.nav-panels', nav);
+    var triggers = $$('[data-asi-panel]', nav), panels = {};
+    $$('[data-asi-panel-id]', nav).forEach(function (p) { panels[p.getAttribute('data-asi-panel-id')] = p; });
+    if (!box || !triggers.length) return;
+    var HOVER = window.matchMedia ? window.matchMedia('(hover: hover) and (pointer: fine)').matches : !TOUCH;
+    var cur = null, tOpen = null, tClose = null, narrow = false;
+    function trig(id) { return triggers.filter(function (t) { return t.getAttribute('data-asi-panel') === id; })[0]; }
+    triggers.forEach(function (t) { t.setAttribute('aria-haspopup', 'true'); t.setAttribute('aria-expanded', 'false'); var p = panels[t.getAttribute('data-asi-panel')]; if (p) { p.id = p.id || 'asi-panel-' + t.getAttribute('data-asi-panel'); t.setAttribute('aria-controls', p.id); } });
+    function setNarrow(n) { narrow = n; [nav, logo].forEach(function (e) { if (e) e.classList.toggle('is-narrow', n && !cur); }); }
+    /* Webflow combos can't reach descendants, so the trigger's caret carries the state too */
+    function active(t, on) { t.classList.toggle('is-active', on); $$('.nav-caret', t).forEach(function (c) { c.classList.toggle('is-active', on); }); }
+    /* narrow past 120 px, widen again under 60 px: no flicker while the page rests near the threshold */
+    function wantNarrow() { var y = window.scrollY; return DESK.matches && (narrow ? y > 60 : y > 120); }
+    function links(p) { return $$('a', p); }
+    function open(id, focusFirst) {
+      clearTimeout(tClose); clearTimeout(tOpen);
+      var p = panels[id]; if (!p || !DESK.matches) return;
+      if (cur && cur !== id) { panels[cur].classList.remove('is-shown'); panels[cur].classList.remove('is-open'); }
+      cur = id;
+      /* opening from the narrow bar: measure the panel at the bar's full width (states swapped without easing,
+         then put back), so its height is right from the start while the bar eases wide around it */
+      var full = 0;
+      if (nav.classList.contains('is-narrow')) {
+        var tn = nav.style.transition, tl = logo ? logo.style.transition : '';
+        nav.style.transition = 'none'; if (logo) logo.style.transition = 'none';
+        [nav, logo].forEach(function (e) { if (e) e.classList.remove('is-narrow'); });
+        full = box.clientWidth;
+        [nav, logo].forEach(function (e) { if (e) e.classList.add('is-narrow'); });
+        void nav.offsetWidth;
+        nav.style.transition = tn; if (logo) logo.style.transition = tl;
+      }
+      [nav, logo].forEach(function (e) { if (e) e.classList.remove('is-narrow'); });
+      nav.classList.add('is-open');
+      triggers.forEach(function (t) { var on = t === trig(id); active(t, on); t.setAttribute('aria-expanded', on ? 'true' : 'false'); });
+      p.classList.add('is-open');
+      if (full) { p.style.width = full + 'px'; clearTimeout(p.__asiW); p.__asiW = setTimeout(function () { p.style.width = ''; if (cur === id) box.style.height = p.offsetHeight + 'px'; }, 900); }
+      box.style.height = p.offsetHeight + 'px';
+      requestAnimationFrame(function () { p.classList.add('is-shown'); });
+      if (!p.__asiPrev) preview(p);
+      if (focusFirst) { var a = links(p)[0]; if (a) a.focus(); }
+    }
+    function close(returnFocus) {
+      clearTimeout(tOpen); if (!cur) return;
+      var id = cur, p = panels[id];
+      p.classList.remove('is-shown'); box.style.height = '0px';
+      cur = null; nav.classList.remove('is-open');
+      triggers.forEach(function (t) { active(t, false); t.setAttribute('aria-expanded', 'false'); });
+      setTimeout(function () { if (cur !== id) p.classList.remove('is-open'); }, RM ? 0 : 420);
+      setNarrow(wantNarrow());
+      if (returnFocus) { var t = trig(id); if (t) t.focus(); }
+    }
+    /* preview picture: one stacked <img> per row, faded in on hover or focus */
+    function preview(p) {
+      p.__asiPrev = true;
+      var frame = $('.nav-preview', p); if (!frame) return;
+      var rows = $$('[data-asi-preview]', p), imgs = [];
+      rows.forEach(function (r, i) {
+        var im = document.createElement('img'); im.src = r.getAttribute('data-asi-preview'); im.alt = ''; im.className = 'nav-preview-img' + (i === 0 ? ' is-on' : '');
+        im.setAttribute('loading', 'eager'); frame.appendChild(im); imgs.push(im);
+        function on() { imgs.forEach(function (x, j) { x.classList.toggle('is-on', j === i); }); rows.forEach(function (x, j) { x.classList.toggle('is-hover', j === i); }); }
+        r.addEventListener('mouseenter', on); r.addEventListener('focus', on);
+      });
+      if (rows[0]) rows[0].classList.add('is-hover');
+    }
+    triggers.forEach(function (t) {
+      var id = t.getAttribute('data-asi-panel');
+      if (HOVER) {
+        t.addEventListener('mouseenter', function () { clearTimeout(tClose); clearTimeout(tOpen); if (cur) open(id); else tOpen = setTimeout(function () { open(id); }, 140); });
+        t.addEventListener('mouseleave', function () { clearTimeout(tOpen); });
+      } else {
+        t.addEventListener('click', function (e) { if (DESK.matches && cur !== id) { e.preventDefault(); open(id); } });
+      }
+      t.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') { if (cur !== id || e.key === 'ArrowDown') { e.preventDefault(); open(id, true); } }
+        else if (e.key === 'Escape') close(true);
+      });
+    });
+    if (HOVER) {
+      nav.addEventListener('mouseenter', function () { clearTimeout(tClose); });
+      nav.addEventListener('mouseleave', function () { clearTimeout(tOpen); tClose = setTimeout(function () { close(false); }, 260); });
+    }
+    nav.addEventListener('keydown', function (e) {
+      if (!cur) return;
+      if (e.key === 'Escape') { e.preventDefault(); close(true); return; }
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      var list = links(panels[cur]), i = list.indexOf(document.activeElement); if (i < 0) return;
+      e.preventDefault(); list[(i + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length].focus();
+    });
+    nav.addEventListener('focusout', function (e) { if (cur && e.relatedTarget && !nav.contains(e.relatedTarget)) close(false); });
+    document.addEventListener('click', function (e) { if (cur && !nav.contains(e.target)) close(false); });
+    window.addEventListener('resize', function () { if (cur) { if (!DESK.matches) close(false); else box.style.height = panels[cur].offsetHeight + 'px'; } });
+    setNarrow(wantNarrow());
+    onFrame(function () { var n = wantNarrow(); if (n !== narrow) setNarrow(n); });
   }
 
   /* ---------- 2. scroll reveals (cards, headings, rows) ---------- */
@@ -856,7 +988,9 @@
     if (RM) return;
     var nav = $('.nav'); if (!nav) return;
     var lastY = window.scrollY, acc = 0, hidden = false;
-    nav.style.transition = 'transform .45s ' + EASE + ',opacity .35s ' + EASE;
+    /* v1.6.0: an inline transition replaces the stylesheet's, so the v2 nav's narrowing has to be listed here too */
+    nav.style.transition = 'transform .45s ' + EASE + ',opacity .35s ' + EASE +
+      (nav.hasAttribute('data-asi-nav') ? ',max-width ' + NAV_MOVE + ',background-color .3s ' + EASE : '');
     function menuOpen() { return !!$('.nav-mobile.asi-open, .nav-dd-menu.asi-open', nav) || !!nav.querySelector(':focus'); }
     function set(h) {
       if (h === hidden) return; hidden = h;
@@ -864,9 +998,11 @@
       nav.style.opacity = h ? '0' : '';
       nav.style.pointerEvents = h ? 'none' : '';
     }
+    var v2 = nav.hasAttribute('data-asi-nav');
     window.addEventListener('scroll', function () {
       var y = window.scrollY, d = y - lastY; lastY = y;
-      if (y < 80 || menuOpen()) { acc = 0; set(false); return; }
+      /* v1.6.0: on desktop the v2 nav narrows instead of hiding (navPanels); phones still hide on scroll */
+      if (y < 80 || menuOpen() || (v2 && DESK.matches) || nav.classList.contains('is-open')) { acc = 0; set(false); return; }
       if ((d > 0) !== (acc > 0)) acc = 0;
       acc += d;
       if (acc > 10) set(true); else if (acc < -6) set(false);
