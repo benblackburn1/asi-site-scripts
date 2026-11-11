@@ -5,6 +5,11 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.2.0  2026-11-10  Review round, Phase 3 (live scenes, Aggregate). The hero rocks are the live visualizer scene, opened
+ *                     on the still's frame, turning with page scroll and drag; the Basalt Rock chips ride their rocks
+ *                     (R-20/21). A glass card follows the plant's selected item with its render and a drifting reading
+ *                     (R-23). The Site Monitoring card follows the live plant and its arrows step it (R-27). Embeds
+ *                     talk to the page over postMessage, origin-checked both ways.
  * v1.1.1  2026-11-10  Every carousel with visible arrows loops endlessly (Ben's answer to Q6), not just the two marked ones.
  * v1.1.0  2026-11-10  Review round, Phase 2 (motion on existing markup). New modules: nav hides on scroll down and
  *                     returns on scroll up (R-02); Services cards grow, sharpen and settle as you scroll (R-14,
@@ -36,7 +41,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.1.1';
+  window.__asiExperience = '1.2.0';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -174,7 +179,7 @@
   /* v1.1.0: modules start from the last line of this file, so every variable below is set even when the
      script runs after the page has already loaded. */
   function boot() {
-    [navMenus, navAutoHide, reveals, splitHeads, eyebrowPulse, faqs, loops, carousels, selectors, accordions, charts, counters, hotspots, videos, liveViews,
+    [navMenus, navAutoHide, reveals, splitHeads, eyebrowPulse, faqs, loops, carousels, selectors, accordions, charts, counters, hotspots, videos, liveViews, liveChips, followers,
       cascades, stacks, readthroughs, progressLines, orbits, diagrams]
       .forEach(function (fn) { safe(fn.name, fn)(); });
   }
@@ -450,11 +455,26 @@
      over the still once it has had time to draw, and hides the page's static dots and tag. Scroll-zoom is off
      (orbit=0) so the page keeps scrolling. Phones and reduced-motion keep the still image. */
   var VIZ = 'https://asi-plant-visualizer.vercel.app/?';
+  var VIZ_ORIGIN = 'https://asi-plant-visualizer.vercel.app';
+  /* v1.2.0: true when this slot will get the live embed (so the video loop stays off there). */
+  function liveAllowed() { return !RM && window.innerWidth >= 768; }
+  var liveFrames = [];   /* { f, wrap, sec, on } */
+  function postTo(rec, msg) { try { rec.f.contentWindow.postMessage(msg, VIZ_ORIGIN); } catch (e) {} }
+  /* Messages from the visualizer: only its own origin, matched to the iframe that sent them. */
+  var vizHandlers = {};
+  function onViz(type, fn) { (vizHandlers[type] = vizHandlers[type] || []).push(fn); }
+  window.addEventListener('message', function (e) {
+    if (e.origin !== VIZ_ORIGIN || !e.data || typeof e.data !== 'object') return;
+    var rec = null; for (var i = 0; i < liveFrames.length; i++) if (liveFrames[i].f.contentWindow === e.source) rec = liveFrames[i];
+    if (!rec) return;
+    (vizHandlers[e.data.type] || []).forEach(function (fn) { try { fn(e.data, rec); } catch (er) {} });
+  });
   function liveViews() {
-    if (RM || window.innerWidth < 768) return;
+    if (!liveAllowed()) return;
     $$('[data-asi-live]').forEach(function (wrap) {
       var q = wrap.getAttribute('data-asi-live'); if (!q) return;
       if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
+      var scene = /(^|&)scene=/.test(q);
       var started = false;
       inView(wrap, function (on, e, io) {
         if (!on || started) return; started = true; io.disconnect();
@@ -464,10 +484,161 @@
         f.src = VIZ + q + (/(^|&)bare(&|$)/.test(q) ? '' : '&bare') + '&ui=0&orbit=0';
         var still = $('img', wrap);
         if (still && still.nextSibling) wrap.insertBefore(f, still.nextSibling); else wrap.appendChild(f);
+        var rec = { f: f, wrap: wrap, sec: closestSection(wrap), on: false, scene: scene };
+        liveFrames.push(rec);
+        if (scene) coverFrame(rec, still);
         f.addEventListener('load', function () {
-          setTimeout(function () { f.classList.add('asi-on'); var sec = closestSection(wrap); if (sec) sec.classList.add('asi-live-on'); }, 1800);
+          setTimeout(function () {
+            f.classList.add('asi-on'); rec.on = true; if (rec.sec) rec.sec.classList.add('asi-live-on');
+            postTo(rec, { type: 'asi:hello' });
+            /* R-21: a scene opened frozen on the still's frame starts moving once it has faded in */
+            if (scene) setTimeout(function () { postTo(rec, { type: 'asi:play' }); }, 850);
+          }, 1800);
         });
       }, { rootMargin: '300px 0px', threshold: 0 });
+    });
+  }
+  /* R-21: the rock scene is framed like its 3:2 still (object-fit: cover), so the iframe takes the still's
+     cover box and the first frame lands on the picture. Page scroll through the hero adds a turn (?spin). */
+  function coverFrame(rec, still) {
+    var wrap = rec.wrap, f = rec.f;
+    wrap.style.overflow = 'hidden';
+    function fit() {
+      var W = wrap.clientWidth, H = wrap.clientHeight, ar = 1.5;
+      if (still && still.naturalWidth) ar = still.naturalWidth / still.naturalHeight;
+      var k = Math.max(W / ar, H), bw = k * ar, bh = k;
+      f.style.width = bw + 'px'; f.style.height = bh + 'px'; f.style.left = ((W - bw) / 2) + 'px'; f.style.top = ((H - bh) / 2) + 'px';
+    }
+    fit(); window.addEventListener('resize', fit);
+    if (still && !still.complete) still.addEventListener('load', fit);
+    var lastP = -1;
+    onFrame(function () {
+      if (!rec.on) return;
+      var r = rec.sec.getBoundingClientRect(), z = zoomOf();
+      var p = clamp(-r.top / Math.max(1, r.height), 0, 1); if (z && Math.abs(p - lastP) < 0.002) return;
+      lastP = p; postTo(rec, { type: 'asi:scroll', p: p });
+    });
+  }
+
+  /* R-20: the hero's "Basalt Rock" chips ride on the rocks. The embed posts each rock's card anchor (0..1 of the
+     frame, largest rock first). Chips pair with rocks by their printed tonnage. */
+  var ROCK_TONS = ['14.45', '10.23', '6.98', '4.52'];
+  function liveChips() {
+    var first = null;
+    onViz('asi:anchors', function (m, rec) {
+      if (!rec.scene || !m.pts) return;
+      var layer = $('[data-asi-chips]', rec.sec); if (!layer) return;
+      if (!rec.chips) {
+        rec.chips = layer.__asiRocks || [];
+        rec.chips.forEach(function (c) { if (c) c.style.transition = 'opacity .4s'; });
+      }
+      var f = rec.f, fw = f.offsetWidth, fh = f.offsetHeight, fx = f.offsetLeft, fy = f.offsetTop;
+      if (!rec.a0) rec.a0 = m.pts.map(function (q) { return [q[0], q[1]]; });
+      /* the scene starts from the still's frame with the chips where Figma put them; once the rocks move, each
+         chip eases onto its rock (bottom-left corner just beside the rock's anchor) and then rides it */
+      if (!rec.t0 && m.pts.some(function (q, i) { return Math.abs(q[0] - rec.a0[i][0]) + Math.abs(q[1] - rec.a0[i][1]) > 0.002; })) rec.t0 = performance.now();
+      var k = rec.t0 ? clamp((performance.now() - rec.t0) / 1400, 0, 1) : 0; k = k * k * (3 - 2 * k);
+      rec.chips.forEach(function (c, i) {
+        var q = m.pts[i]; if (!c || !q) return;
+        var tx = fx + q[0] * fw + 10 - c.offsetLeft, ty = fy + q[1] * fh - 6 - c.offsetHeight - c.offsetTop;
+        c.style.transform = 'translate(' + (tx * k).toFixed(1) + 'px,' + (ty * k).toFixed(1) + 'px)';
+        c.style.opacity = q[2] === 0 ? '0' : '';
+      });
+    });
+    /* pair chips with rocks by their printed tonnage (before the readings start to drift), then let them drift */
+    $$('[data-asi-chips]').forEach(function (layer) {
+      if (RM || !$('[data-asi-live*="anchors"]', closestSection(layer))) return;
+      layer.__asiRocks = ROCK_TONS.map(function (t) { return $$(':scope > *', layer).filter(function (c) { return c.textContent.indexOf(t) > -1; })[0] || null; });
+      $$(':scope > *', layer).forEach(function (c) { driftNumber(c, 0.03, 0.012, 1500); });
+    });
+  }
+  function driftNumber(el, range, step, every) {
+    var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false), n, node = null;
+    while ((n = walker.nextNode())) { if (/\d/.test(n.nodeValue)) { node = n; break; } }
+    if (!node) return null;
+    var st = { node: node, orig: node.nodeValue, timer: null };
+    function arm() {
+      var mm = st.orig.match(/\d[\d,]*(\.\d+)?/); if (!mm) return;
+      var raw = mm[0].replace(/,/g, ''), bv = parseFloat(raw), dec = mm[1] ? mm[1].length - 1 : 0, v = bv;
+      var lo = bv * (1 - range), hi = bv * (1 + range);
+      if (dec === 0 && hi - lo < 2) { lo = Math.max(0, bv - 1); hi = bv + 1; }
+      clearInterval(st.timer);
+      st.timer = setInterval(function () {
+        if (document.hidden) return;
+        v = clamp(v + (Math.random() - 0.5) * bv * step * 2, lo, hi);
+        var txt = dec ? v.toFixed(dec) : String(Math.round(v));
+        if (/,/.test(mm[0])) txt = Number(txt).toLocaleString('en-US');
+        st.node.nodeValue = st.orig.replace(mm[0], txt);
+      }, every + Math.random() * 900);
+    }
+    st.reset = function (text) { st.orig = text; st.node.nodeValue = text; if (!RM) arm(); };
+    if (!RM) arm();
+    return st;
+  }
+
+  /* R-23 / R-27: cards that follow the live plant. Any [data-asi-follow-*] field in a section with a live plant
+     shows the item the embed has selected (hover, click or idle advance there). Section arrows step the embed.
+     Without the embed (phones, reduced motion) the card keeps its designed default item; arrows cycle the same
+     items locally. Item copy and renders come from the plant visualizer (Site Tracking). */
+  var VIZ_IMG = VIZ_ORIGIN + '/section/';
+  var PLANT_ITEMS = [
+    { id: 'hopper', label: 'Dump hopper', sub: 'Level-driven feed', body: 'Hopper level sets the feeder speed, so the primary runs choke-fed instead of starving and flooding.', metric: ['Dump hopper', 74, '% level'] },
+    { id: 'jaw', label: 'Primary jaw', sub: 'Motor load, live', body: 'Motor load and chamber level stream to the control room, so the feeder backs off before a stall, not after.', metric: ['Primary jaw CR-1', 212, 'A'] },
+    { id: 'pile', label: 'Surge pile', sub: 'Tonnage on hand', body: 'Belt scales keep a running tonnage for every pile, ready for the morning report without a walk round the yard.', metric: ['Surge pile', 1240, 'Tons'] },
+    { id: 'screen', label: 'Screens', sub: 'Vibration and bearing heat', body: 'Vibration and temperature are trended on every deck, so wear shows up as a curve on a screen, not a shutdown.', metric: ['Screen SC-1', 71, 'A'] },
+    { id: 'cone', label: 'Cone crushers', sub: 'Setting held to spec', body: 'Setting, power draw and cavity level are logged continuously, and the automation trims the setting to keep the product in spec.', metric: ['Secondary cone CR-2', 238, 'A'] },
+    { id: 'stacker', label: 'Radial stackers', sub: 'Pile patterns, automated', body: 'Stackers swing and raise on a programmed pattern, so piles stay clean and segregation stays low.', metric: ['Stacker S-1', 22, 'A'] },
+    { id: 'ehouse', label: 'E-House', sub: 'The plant in one room', body: 'Drives, controls and power distribution sit together in one prefabricated house, wired and tested before it ships.', metric: ['E-House', 412, 'kW'] }
+  ];
+  function fmtMetric(v, unit) { return (v >= 1000 ? Number(v).toLocaleString('en-US') : String(v)) + ' ' + unit; }
+  function followers() {
+    var groups = [];
+    $$('[data-asi-follow-label],[data-asi-follow-body],[data-asi-follow-img],[data-asi-follow-metric]').forEach(function (el) {
+      var sec = closestSection(el), g = null;
+      for (var i = 0; i < groups.length; i++) if (groups[i].sec === sec) g = groups[i];
+      if (!g) { g = { sec: sec, idx: 0, drift: null }; groups.push(g); }
+    });
+    groups.forEach(function (g) {
+      var f = function (k) { return $$('[data-asi-follow-' + k + ']', g.sec); };
+      var metricEl = f('metric')[0];
+      if (metricEl) g.drift = driftNumber(metricEl, 0.03, 0.01, 1600);
+      /* the images' rendering box stays put while the picture swaps */
+      g.apply = function (it) {
+        f('label').forEach(function (e) { e.textContent = it.label; });
+        f('sub').forEach(function (e) { e.textContent = it.sub; });
+        f('body').forEach(function (e) { e.textContent = it.body; });
+        f('metric-label').forEach(function (e) { e.textContent = it.metric[0]; });
+        if (g.drift) g.drift.reset(fmtMetric(it.metric[1], it.metric[2])); else if (metricEl) metricEl.textContent = fmtMetric(it.metric[1], it.metric[2]);
+        f('img').forEach(function (e) {
+          var src = it.image || (VIZ_IMG + it.id + '.png');
+          if (e.getAttribute('src') === src) return;
+          e.removeAttribute('srcset'); e.removeAttribute('sizes');
+          e.style.transition = 'opacity .25s'; e.style.opacity = '0';
+          var im = new Image(); im.onload = im.onerror = function () { e.src = src; e.alt = it.label + ' render'; e.style.opacity = ''; }; im.src = src;
+        });
+      };
+      /* arrows: step the embed when it is live, else the local list. Capture phase, so the page's carousel
+         stepping and the href="#" jump never run for these. */
+      g.sec.addEventListener('click', function (e) {
+        var a = e.target.closest && e.target.closest('[data-asi-prev],[data-asi-next]'); if (!a || !g.sec.contains(a)) return;
+        e.preventDefault(); e.stopPropagation();
+        var dir = a.hasAttribute('data-asi-next') ? 1 : -1, rec = liveOf(g.sec);
+        if (rec) postTo(rec, { type: dir > 0 ? 'asi:next' : 'asi:prev' });
+        else { g.idx = (g.idx + dir + PLANT_ITEMS.length) % PLANT_ITEMS.length; g.apply(PLANT_ITEMS[g.idx]); }
+      }, true);
+    });
+    function liveOf(sec) { for (var i = 0; i < liveFrames.length; i++) if (liveFrames[i].sec === sec && liveFrames[i].on && !liveFrames[i].scene) return liveFrames[i]; return null; }
+    onViz('asi:select', function (m, rec) {
+      groups.forEach(function (g) {
+        if (g.sec !== rec.sec || !m.id) return;
+        var base = null; for (var i = 0; i < PLANT_ITEMS.length; i++) if (PLANT_ITEMS[i].id === m.id) { base = PLANT_ITEMS[i]; g.idx = i; }
+        var it = {
+          id: m.id, label: m.label || (base && base.label) || m.id, sub: m.sub || (base && base.sub) || '',
+          body: m.body || (base && base.body) || '', image: m.image,
+          metric: m.metric ? [m.metric.label, m.metric.value, m.metric.unit] : (base ? base.metric : ['', '', ''])
+        };
+        g.apply(it);
+      });
     });
   }
 
@@ -477,6 +648,7 @@
     var saveData = navigator.connection && navigator.connection.saveData;
     $$('[data-asi-video]').forEach(function (wrap) {
       var slot = SLOT[wrap.getAttribute('data-asi-video')]; var key = slot && slot.v; if (!key || !VIDEO[key] || saveData) return;
+      if (wrap.hasAttribute('data-asi-live') && liveAllowed()) return;   /* v1.2.0: the live scene replaces the loop */
       var still = $('img', wrap);
       if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
       var v = document.createElement('video');
