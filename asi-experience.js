@@ -5,6 +5,9 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.9.0  2026-11-11  FAQs open and close smoothly (Ben: "make all the motion for opening FAQs smooth and eased"): the answer's
+ *                     height, padding and text ease together over 0.52 s, the item that closes moves at the same time,
+ *                     and the +/- icon turns half a turn, swapping at the midpoint.
  * v1.8.0  2026-11-11  E-House sequence settles (Ben: "if you scroll and stop in-between states it will ease you into the
  *                     next state depending on the direction you are scrolling"): rest points are the start, the middle
  *                     of each card's frame range (the end, for the last card); when scrolling stops between them the page glides to
@@ -83,7 +86,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.8.0';
+  window.__asiExperience = '1.9.0';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -188,7 +191,6 @@
     '.asi-video{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .6s}',
     '.asi-video.asi-on{opacity:1}',
     '[data-asi-chips]>*{will-change:transform}',
-    '.faq-a{transition:opacity .3s}',
     '.asi-live{position:absolute;left:0;top:0;width:100%;height:100%;border:0;opacity:0;transition:opacity .8s;background:transparent}',
     '.asi-live.asi-on{opacity:1}',
     '.asi-live-on [data-asi-hotspot],.asi-live-on [data-asi-tag]{display:none!important}',
@@ -608,18 +610,49 @@
       var items = $$('.faq-item', list);
       var plus = null, minus = null;
       items.forEach(function (it) { var ic = $('.faq-icon', it); if (!ic) return; if (/minus/.test(ic.src)) minus = minus || ic.src; else plus = plus || ic.src; });
-      function set(it, open) {
+      /* v1.9.0 (Ben: "make all the motion for opening FAQs smooth and eased"): the answer's height, padding and
+         text ease open and shut together (the one closing and the one opening move at the same time), and the
+         +/- icon turns half a turn, swapping at the midpoint. */
+      var FAQ = '.52s cubic-bezier(.22,.8,.24,1)', CLEAR = ['height', 'paddingTop', 'paddingBottom', 'opacity', 'transform', 'overflow', 'transition'];
+      function set(it, open, anim) {
         var a = $('.faq-a', it), ic = $('.faq-icon', it), q = $('.faq-q', it);
-        if (a) { a.classList.toggle('u-hide', !open); a.style.opacity = open ? '' : '0'; if (open) requestAnimationFrame(function () { a.style.opacity = ''; }); }
-        if (ic && plus && minus) ic.src = open ? minus : plus;
+        var was = it.classList.contains('asi-open');
         if (q) q.setAttribute('aria-expanded', open ? 'true' : 'false');
         it.classList.toggle('asi-open', open);
+        if (!anim || RM || was === open) {
+          if (a) { clearTimeout(a.__asiT); a.classList.toggle('u-hide', !open); CLEAR.forEach(function (k) { a.style[k] = ''; }); }
+          if (ic && plus && minus) { ic.src = open ? minus : plus; ic.style.transform = open ? 'rotate(180deg)' : ''; }
+          return;
+        }
+        if (a) {
+          clearTimeout(a.__asiT);
+          var from = a.classList.contains('u-hide') ? 0 : a.getBoundingClientRect().height;
+          a.style.transition = 'none'; a.style.overflow = 'hidden';
+          a.classList.remove('u-hide');
+          var to = 0;
+          if (open) { ['height', 'paddingTop', 'paddingBottom'].forEach(function (k) { a.style[k] = ''; }); to = a.getBoundingClientRect().height; }
+          a.style.height = from + 'px';
+          if (open && !from) { a.style.paddingTop = a.style.paddingBottom = '0px'; a.style.opacity = '0'; a.style.transform = 'translateY(-6px)'; }
+          void a.offsetHeight;
+          a.style.transition = 'height ' + FAQ + ',padding ' + FAQ + ',opacity .4s ' + EASE + (open ? ' .08s' : '') + ',transform .5s ' + EASE + (open ? ' .06s' : '');
+          a.style.height = to + 'px';
+          a.style.paddingTop = a.style.paddingBottom = open ? '' : '0px';
+          a.style.opacity = open ? '1' : '0';
+          a.style.transform = open ? 'none' : 'translateY(-4px)';
+          a.__asiT = setTimeout(function () { if (!open) a.classList.add('u-hide'); CLEAR.forEach(function (k) { a.style[k] = ''; }); }, 600);
+        }
+        if (ic && plus && minus) {
+          clearTimeout(ic.__asiT);
+          ic.style.transition = 'transform .5s ' + EASE;
+          ic.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+          ic.__asiT = setTimeout(function () { ic.src = open ? minus : plus; }, 170);
+        }
       }
       items.forEach(function (it) {
         var q = $('.faq-q', it); if (!q) return;
         q.setAttribute('role', 'button'); q.setAttribute('tabindex', '0');
         set(it, !$('.faq-a', it) || !$('.faq-a', it).classList.contains('u-hide'));
-        function toggle() { var opening = !it.classList.contains('asi-open'); items.forEach(function (o) { set(o, false); }); if (opening) set(it, true); }
+        function toggle() { var opening = !it.classList.contains('asi-open'); items.forEach(function (o) { if (o !== it) set(o, false, true); }); set(it, opening, true); }
         q.addEventListener('click', toggle);
         q.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
       });
