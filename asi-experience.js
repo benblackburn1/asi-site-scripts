@@ -5,6 +5,10 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.5.0  2026-11-11  Aggregate "Automation control you can see" is now the stacker photo (Ben, A1-A4): new photoChips
+ *                     module. Chips are pinned to points in the picture ([data-asi-at]="x,y" as fractions of the photo)
+ *                     and stay on them through the cover crop at every width and through a slow push-in as the section
+ *                     scrolls by (desktop only; phones and reduced motion get the still with fixed chips). Readings drift.
  * v1.4.1  2026-11-11  E-House sequence: the renders clip the container's shadow at the frame's left/right edges, which
  *                     showed as a hard line. Each frame's side edges now fade into its own background, and any space
  *                     beside the frame is filled with that background instead of the page colour.
@@ -52,7 +56,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.4.1';
+  window.__asiExperience = '1.5.0';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -192,9 +196,84 @@
   /* v1.1.0: modules start from the last line of this file, so every variable below is set even when the
      script runs after the page has already loaded. */
   function boot() {
-    [forms, navMenus, navAutoHide, reveals, splitHeads, eyebrowPulse, faqs, loops, carousels, selectors, accordions, charts, counters, hotspots, videos, liveViews, liveChips, followers,
+    [forms, photoChips, navMenus, navAutoHide, reveals, splitHeads, eyebrowPulse, faqs, loops, carousels, selectors, accordions, charts, counters, hotspots, videos, liveViews, liveChips, followers,
       cascades, stacks, readthroughs, progressLines, orbits, diagrams, sequences]
       .forEach(function (fn) { safe(fn.name, fn)(); });
+  }
+
+  /* ---------- 0b. photo with chips pinned to points in the picture (v1.5.0, Aggregate stacker) ----------
+     [data-asi-photo="0.08"] wraps an <img> (object-fit: cover, centred) and a [data-asi-chips="photo"] layer of pins.
+     Each pin carries data-asi-at="x,y" (fractions of the photo) and data-asi-side="tr|tl|br|bl": the corner of the
+     point its chip sits at. The value on data-asi-photo is the push-in at the end of the scroll (8% by default). */
+  function photoChips() {
+    $$('[data-asi-photo]').forEach(function (wrap) {
+      var img = $('img', wrap), layer = $('[data-asi-chips="photo"]', wrap); if (!img || !layer) return;
+      var maxZ = parseFloat(wrap.getAttribute('data-asi-photo')); if (!(maxZ >= 0)) maxZ = 0.08;
+      var pins = $$('[data-asi-at]', layer).map(function (el) {
+        var a = el.getAttribute('data-asi-at').split(','), side = el.getAttribute('data-asi-side') || 'tr';
+        var chip = el.lastElementChild, lead = null;
+        if (chip) {
+          chip.style.position = 'absolute';
+          chip.style.left = chip.style.right = chip.style.top = chip.style.bottom = 'auto';
+          chip.style[side.charAt(1) === 'l' ? 'right' : 'left'] = '14px';
+          chip.style[side.charAt(0) === 'b' ? 'top' : 'bottom'] = '10px';
+          if (!RM) driftNumber(chip, 0.03, 0.012, 1500);
+          /* a thin leader back to the dot, shown only when the chip has had to move clear of the heading */
+          lead = document.createElement('span'); lead.setAttribute('aria-hidden', 'true');
+          lead.style.cssText = 'position:absolute;top:0;width:14px;display:none;pointer-events:none;border:0 solid rgba(255,255,255,.8);border-bottom-width:1px;' +
+            (side.charAt(1) === 'l' ? 'right:0;border-right-width:1px' : 'left:0;border-left-width:1px');
+          el.insertBefore(lead, chip);
+        }
+        return { el: el, x: +a[0], y: +a[1], side: side, chip: chip, lead: lead };
+      });
+      /* headings laid over the photo (desktop) that chips must not cover */
+      var heads = $$('h1, h2', closestSection(wrap)).filter(function (h) { return !wrap.contains(h); });
+      function clear(p) {
+        if (!p.chip) return;
+        var bottom = p.side.charAt(0) === 'b', dy = 0;
+        p.chip.style.top = bottom ? '10px' : 'auto';
+        p.chip.style.bottom = bottom ? 'auto' : '10px';
+        var wr = wrap.getBoundingClientRect(), zr = wr.width / (wrap.clientWidth || 1) || 1;
+        var cr = p.chip.getBoundingClientRect();
+        heads.forEach(function (h) {
+          var hr = h.getBoundingClientRect();
+          if (!hr.width || hr.bottom <= wr.top || hr.top >= wr.bottom) return;
+          if (cr.left < hr.right && hr.left < cr.right && cr.top < hr.bottom + 8 * zr && hr.top < cr.bottom) dy = Math.max(dy, (hr.bottom - cr.top) / zr + 8);
+        });
+        if (dy > 0) {
+          /* move the chip below the heading: it now hangs under the dot */
+          var top = (cr.top - wr.top) / zr - parseFloat(p.el.style.top) + dy;
+          p.chip.style.bottom = 'auto'; p.chip.style.top = top.toFixed(1) + 'px';
+          p.lead.style.display = 'block'; p.lead.style.height = Math.max(0, top + p.chip.offsetHeight / 2).toFixed(1) + 'px';
+        } else p.lead.style.display = 'none';
+      }
+      if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
+      wrap.style.overflow = 'hidden';
+      img.style.transformOrigin = '50% 50%';
+      var lastK = -1, lastW = -1;
+      function place(k) {
+        var W = wrap.clientWidth, H = wrap.clientHeight, iw = img.naturalWidth, ih = img.naturalHeight;
+        if (!iw || !ih || !W || !H) return;
+        var s = Math.max(W / iw, H / ih), dw = iw * s, dh = ih * s, ox = (W - dw) / 2, oy = (H - dh) / 2, z = 1 + maxZ * k;
+        img.style.transform = k > 0 ? 'scale(' + z.toFixed(4) + ')' : '';
+        pins.forEach(function (p) {
+          var x = W / 2 + (ox + p.x * dw - W / 2) * z, y = H / 2 + (oy + p.y * dh - H / 2) * z;
+          p.el.style.left = x.toFixed(1) + 'px'; p.el.style.top = y.toFixed(1) + 'px';
+        });
+        if (heads.length) pins.forEach(clear);
+        lastK = k; lastW = W;
+      }
+      var push = !RM && maxZ > 0;
+      function progress() {
+        if (!push || !DESK.matches) return 0;
+        var r = wrap.getBoundingClientRect(), vh = window.innerHeight;
+        return clamp((vh - r.top) / (vh + r.height), 0, 1);
+      }
+      function update(force) { var k = progress(); if (force || Math.abs(k - lastK) > 0.001 || wrap.clientWidth !== lastW) place(k); }
+      if (img.complete) update(true); else img.addEventListener('load', function () { update(true); });
+      window.addEventListener('resize', function () { update(true); });
+      if (push) onFrame(function () { update(false); });
+    });
   }
 
   /* ---------- 0. forms: role options + ?role= preselect, placeholder FAQs, stray placeholders ---------- */
