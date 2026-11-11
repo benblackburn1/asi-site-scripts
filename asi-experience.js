@@ -5,6 +5,11 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.4.0  2026-11-11  UX review Phase 1 + careers path: new forms module. The apply form's Role dropdown gets its real
+ *                     options (Engineering, Programming, Field startups, Not sure yet) while the Designer still holds
+ *                     the placeholder, and ?role= in the URL preselects one (Home job cards link to
+ *                     /contact?role=...#apply). FAQ items whose answer is still a [COPY PENDING] placeholder are
+ *                     hidden. The "Example text" placeholders are removed from every field (screen readers read them).
  * v1.3.1  2026-11-10  R-28 final: checklist rows only dim while the sequence is pinned (phones show them plain).
  * v1.3.0  2026-11-10  Review round, Phase 4: pinned scroll-scrubbed frame sequence (R-28, data-asi-sequence; test page only
  *                     until approved). Carousel loops skip hidden cards (R-07 hid the four old Home machine cards).
@@ -44,7 +49,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.3.1';
+  window.__asiExperience = '1.4.0';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -184,9 +189,36 @@
   /* v1.1.0: modules start from the last line of this file, so every variable below is set even when the
      script runs after the page has already loaded. */
   function boot() {
-    [navMenus, navAutoHide, reveals, splitHeads, eyebrowPulse, faqs, loops, carousels, selectors, accordions, charts, counters, hotspots, videos, liveViews, liveChips, followers,
+    [forms, navMenus, navAutoHide, reveals, splitHeads, eyebrowPulse, faqs, loops, carousels, selectors, accordions, charts, counters, hotspots, videos, liveViews, liveChips, followers,
       cascades, stacks, readthroughs, progressLines, orbits, diagrams, sequences]
       .forEach(function (fn) { safe(fn.name, fn)(); });
+  }
+
+  /* ---------- 0. forms: role options + ?role= preselect, placeholder FAQs, stray placeholders ---------- */
+  var ROLES = [['engineering', 'Engineering'], ['programming', 'Programming'], ['field-startups', 'Field startups'], ['not-sure', 'Not sure yet']];
+  function forms() {
+    var sel = document.getElementById('Role');
+    if (sel && sel.tagName === 'SELECT') {
+      var opts = sel.options, pending = opts.length < 2, i;
+      for (i = 0; i < opts.length; i++) if (/COPY PENDING/i.test(opts[i].text)) pending = true;
+      if (pending) {
+        while (sel.options.length) sel.remove(0);
+        ROLES.forEach(function (r) { var o = document.createElement('option'); o.value = r[0]; o.text = r[1]; sel.add(o); });
+        sel.value = 'not-sure';
+      }
+      var m = /[?&]role=([^&#]*)/.exec(window.location.search), want = m ? decodeURIComponent(m[1].replace(/\+/g, ' ')).toLowerCase() : '';
+      if (want) {
+        for (i = 0; i < sel.options.length; i++) {
+          var o2 = sel.options[i];
+          if (o2.value.toLowerCase() === want || o2.text.toLowerCase().replace(/\s+/g, '-') === want) { sel.selectedIndex = i; break; }
+        }
+      }
+    }
+    $$('.faq-item').forEach(function (it) {
+      var a = $('.faq-a', it);
+      if (a && /^\s*\[COPY PENDING/i.test(a.textContent)) { it.style.display = 'none'; it.setAttribute('data-asi-pending', ''); }
+    });
+    $$('input[placeholder="Example text"], textarea[placeholder="Example text"]').forEach(function (f) { f.removeAttribute('placeholder'); });
   }
 
   /* ---------- 1. nav: services dropdown + mobile menu ---------- */
