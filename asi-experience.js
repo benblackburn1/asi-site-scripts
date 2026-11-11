@@ -5,6 +5,9 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.7.1  2026-11-11  E-House sequence on phones: the camera follows the container (each frame's box measured on load,
+ *                     centre smoothed over 11 frames) and the scene is larger, one steady scale with the widest moment
+ *                     at 88% of the screen (Ben: "keep the E-House in the centre on mobile and make it a bit bigger").
  * v1.7.0  2026-11-11  E-House sequence on phones and tablets (Ben: "mobile needs the scrolling animation with the cards
  *                     fixed at the bottom and changing"): below 992 px the scene pins and scrubs too, drawn full width
  *                     between the nav and the cards; the cards are held 16 px from the bottom of the screen and cross-fade
@@ -69,7 +72,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.7.0';
+  window.__asiExperience = '1.7.1';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -1274,7 +1277,7 @@
       function load() {
         for (var i = 0; i < count; i++) (function (i) {
           var im = new Image(); im.crossOrigin = 'anonymous'; im.decoding = 'async';
-          im.onload = function () { frames[i] = im; loaded++; if (i === cur || cur < 0) draw(cur < 0 ? 0 : cur, true); };
+          im.onload = function () { frames[i] = im; boxes[i] = boxOf(im); loaded++; if (i === cur || cur < 0) draw(cur < 0 ? 0 : cur, true); };
           im.src = url(i);
         })(i);
       }
@@ -1296,15 +1299,15 @@
         var W = canvas.width, H = canvas.height, s = Math.min(W / im.naturalWidth, H / im.naturalHeight);
         var w = im.naturalWidth * s, h = im.naturalHeight * s, x = (W - w) / 2, y = (H - h) / 2;
         if (on === 'mob') {
-          /* phones (v1.7.0): the scene sits larger, centred in the room between the nav and the cards held at the
-             bottom; the frame's point (0.45, 0.5), about where the container sits, lands on the centre of that room */
+          /* phones (v1.7.1, Ben: "keep the E-House in the centre on mobile and make it a bit bigger"): the camera
+             follows the container. Each frame's box (container, cables, cabinet) is measured as it loads; its centre,
+             smoothed over neighbouring frames, lands in the middle of the room between the nav and the card. One
+             steady scale for the whole sequence: the widest box fills 88% of the screen, capped to fit that room. */
           var dpr = W / (canvas.clientWidth || W), top = 76 * dpr, bot = H - (cardH + 32) * dpr;
-          /* the whole frame width: the container runs from 2% to 93% of the frame across the sequence, so any zoom
-             would push it off a phone screen at one end or the other */
-          var z = 1, ax = 0.5;
-          s = Math.min(W / im.naturalWidth * z, Math.max(1, bot - top) / im.naturalHeight);
+          var c = centreAt(f), ext = extent();
+          s = Math.min(W * 0.88 / (ext[0] * im.naturalWidth), Math.max(1, bot - top) * 0.9 / (ext[1] * im.naturalHeight));
           w = im.naturalWidth * s; h = im.naturalHeight * s;
-          x = W / 2 - ax * w; y = (top + bot) / 2 - 0.5 * h;
+          x = W / 2 - c[0] * w; y = (top + bot) / 2 - c[1] * h;
         }
         if (!bg) bg = sampleBg(im);
         ctx.fillStyle = 'rgb(' + bg + ')'; ctx.fillRect(0, 0, W, H);
@@ -1319,6 +1322,35 @@
           g.addColorStop(0.6, 'rgba(' + bg + ',.3)'); g.addColorStop(1, 'rgba(' + bg + ',0)');
           ctx.fillStyle = g; ctx.fillRect(Math.min(e[0], e[1]) - 1, y, fw + 2, h);
         });
+      }
+      /* v1.7.1: where the container is in each frame, as fractions [x0, x1, y0, y1], from its dark pixels on a
+         320x180 copy (the shadow and the pale floor are lighter and left out) */
+      var boxes = [], probe = null;
+      function boxOf(im) {
+        try {
+          if (!probe) { probe = document.createElement('canvas'); probe.width = 320; probe.height = 180; }
+          var g = probe.getContext('2d'); g.drawImage(im, 0, 0, 320, 180);
+          var d = g.getImageData(0, 0, 320, 180).data, cx = [], cy = [], x, y, x0 = 320, x1 = -1, y0 = 180, y1 = -1;
+          for (x = 0; x < 320; x++) cx[x] = 0; for (y = 0; y < 180; y++) cy[y] = 0;
+          for (y = 0; y < 180; y++) for (x = 0; x < 320; x++) { var k = (y * 320 + x) * 4; if (d[k] * 0.3 + d[k + 1] * 0.59 + d[k + 2] * 0.11 < 110) { cx[x]++; cy[y]++; } }
+          for (x = 0; x < 320; x++) if (cx[x] >= 2) { if (x < x0) x0 = x; x1 = x; }
+          for (y = 0; y < 180; y++) if (cy[y] >= 2) { if (y < y0) y0 = y; y1 = y; }
+          return x1 < 0 ? null : [x0 / 320, (x1 + 1) / 320, y0 / 180, (y1 + 1) / 180];
+        } catch (e) { return null; }
+      }
+      /* the box centre around frame f, averaged over 11 frames so the camera glides rather than jumps */
+      function centreAt(f) {
+        var sx = 0, sy = 0, n = 0;
+        for (var j = f - 5; j <= f + 5; j++) { var b = boxes[j]; if (b) { sx += (b[0] + b[1]) / 2; sy += (b[2] + b[3]) / 2; n++; } }
+        return n ? [sx / n, sy / n] : [0.5, 0.56];
+      }
+      /* the largest box over the sequence (defaults to the measured 0.57 x 0.59 of the frame until all have loaded) */
+      var big = null;
+      function extent() {
+        if (big) return big;
+        var mw = 0.57, mh = 0.59, all = loaded >= count;
+        if (all) { mw = 0; mh = 0; boxes.forEach(function (b) { if (b) { mw = Math.max(mw, b[1] - b[0]); mh = Math.max(mh, b[3] - b[2]); } }); if (mw && mh) big = [mw, mh]; else { mw = 0.57; mh = 0.59; } }
+        return big || [mw, mh];
       }
       var bg = null;
       function sampleBg(im) {
