@@ -5,6 +5,12 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.8.0  2026-11-11  E-House sequence settles (Ben: "if you scroll and stop in-between states it will ease you into the
+ *                     next state depending on the direction you are scrolling"): rest points are the start, the middle
+ *                     of each card's frame range (the end, for the last card); when scrolling stops between them the page glides to
+ *                     the next one in the direction of travel. Any wheel, touch or key cancels the glide.
+ *                     Same-page # links glide to their target and stop below the nav (Webflow's own jump ignored the
+ *                     nav, so Contact's "See open roles" landed with the heading under it).
  * v1.7.3  2026-11-11  Photo chips: a chip that would run off the photo's side moves to the other side of its point (the
  *                     phone crop of the Aggregate stacker is narrow); pins hidden at the current width are ignored.
  * v1.7.2  2026-11-11  Phone menu eases open and shut (height and padding over 0.5 s, links fading in one after another)
@@ -77,7 +83,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.7.3';
+  window.__asiExperience = '1.8.0';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -234,7 +240,7 @@
      script runs after the page has already loaded. */
   function boot() {
     [forms, photoChips, navMenus, navPanels, navAutoHide, reveals, splitHeads, eyebrowPulse, faqs, loops, carousels, selectors, accordions, charts, counters, hotspots, videos, liveViews, liveChips, followers,
-      cascades, stacks, readthroughs, progressLines, orbits, diagrams, sequences]
+      cascades, stacks, readthroughs, progressLines, orbits, diagrams, sequences, anchors]
       .forEach(function (fn) { safe(fn.name, fn)(); });
   }
 
@@ -1043,6 +1049,47 @@
     }
   }
 
+  /* v1.8.0: one eased window scroll at a time. A wheel, touch, key or mouse press by the reader cancels it. */
+  var glide = null;
+  function easeInOut(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+  function glideTo(y, done) {
+    y = Math.max(0, Math.min(y, document.documentElement.scrollHeight - window.innerHeight));
+    var from = window.scrollY, dist = y - from;
+    if (glide) glide.stop();
+    if (Math.abs(dist) < 2) { if (done) done(); return; }
+    if (RM) { window.scrollTo(0, y); if (done) done(); return; }
+    var dur = clamp(Math.abs(dist) * 0.9, 380, 900), t0 = 0, live = true;
+    /* the site sets html { scroll-behavior: smooth }, which would smooth every step of the glide again */
+    var html = document.documentElement, sb = html.style.scrollBehavior; html.style.scrollBehavior = 'auto';
+    var stop = function () { live = false; glide = null; html.style.scrollBehavior = sb; ['wheel', 'touchstart', 'keydown', 'mousedown'].forEach(function (e) { window.removeEventListener(e, stop, true); }); };
+    ['wheel', 'touchstart', 'keydown', 'mousedown'].forEach(function (e) { window.addEventListener(e, stop, { capture: true, passive: true }); });
+    glide = { stop: stop, to: y };
+    requestAnimationFrame(function step(ts) {
+      if (!live) return; if (!t0) t0 = ts;
+      var t = Math.min(1, (ts - t0) / dur);
+      window.scrollTo(0, from + dist * easeInOut(t));
+      if (t < 1) requestAnimationFrame(step); else { stop(); if (done) done(); }
+    });
+  }
+
+  /* v1.8.0: same-page # links glide to their target and stop below the nav (16 px clear) */
+  function anchors() {
+    document.addEventListener('click', function (e) {
+      if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      var a = e.target.closest && e.target.closest('a[href*="#"]'); if (!a) return;
+      var href = a.getAttribute('href'), i = href.indexOf('#'), id = href.slice(i + 1);
+      if (!id || (i > 0 && a.pathname.replace(/\/$/, '') !== location.pathname.replace(/\/$/, ''))) return;
+      if (a.hostname && a.hostname !== location.hostname) return;
+      var t = document.getElementById(id); if (!t || a.closest('.nav-mobile')) return;
+      e.preventDefault(); e.stopPropagation();
+      var nav = $('.nav'), nb = 0;
+      if (nav && DESK.matches) { var nr = nav.getBoundingClientRect(); if (nr.bottom > 0 && getComputedStyle(nav).opacity !== '0') nb = nr.bottom; }
+      glideTo(window.scrollY + t.getBoundingClientRect().top - (nb ? nb + 16 : 0), function () {
+        if (history.replaceState) history.replaceState(null, '', '#' + id);
+      });
+    }, true);
+  }
+
   /* ---------- R-02: nav eases up and fades on scroll down, returns on any scroll up ---------- */
   function navAutoHide() {
     if (RM) return;
@@ -1461,6 +1508,34 @@
         cards.forEach(function (c) { var vis = f >= c.from && f <= c.to; c.el.style.opacity = vis ? '1' : '0'; c.el.style.pointerEvents = vis ? 'auto' : 'none'; c.el.style.transform = 'translateY(' + (dk ? (vis ? '-50%' : 'calc(-50% + 16px)') : (vis ? '0' : '16px')) + ')'; });
         ticks.forEach(function (t) { t.el.classList.toggle('asi-ticked', f >= t.at); });
       });
+      /* v1.8.0: settle on a rest point. Rest points: frame 0, the middle of each card's range (the last frame for a card that runs to the end). When
+         the reader stops scrolling (160 ms quiet, finger lifted) part-way between two, glide to the next one in the
+         direction they were going. Not while a glide runs, not outside the pinned stretch. */
+      var rests = [0].concat(cards.map(function (c) { return c.to >= count - 2 ? count - 1 : Math.round((c.from + c.to) / 2); }), [count - 1])
+        .sort(function (a, b) { return a - b; }).filter(function (v, i, a) { return !i || v !== a[i - 1]; });
+      var dir = 1, lastY = window.scrollY, idle = 0, touching = false;
+      function geom() {
+        var r = stage.parentNode.getBoundingClientRect(), top = (head ? head.offsetHeight : 0) * zoomOf();
+        return { r: r, top: top, total: r.height - top - window.innerHeight };
+      }
+      function settle() {
+        if (!on || glide || touching) return;
+        var g = geom(); if (g.total <= 0) return;
+        var raw = (-g.r.top - g.top) / g.total; if (raw <= 0.002 || raw >= 0.998) return;
+        var fr = raw * (count - 1), target = null;
+        for (var i = 0; i < rests.length; i++) if (Math.abs(rests[i] - fr) < 1.5) return;   /* already resting */
+        if (dir > 0) { for (i = 0; i < rests.length; i++) if (rests[i] > fr) { target = rests[i]; break; } }
+        else { for (i = rests.length - 1; i >= 0; i--) if (rests[i] < fr) { target = rests[i]; break; } }
+        if (target === null) return;
+        glideTo(window.scrollY + (target / (count - 1) - raw) * g.total);
+      }
+      window.addEventListener('scroll', function () {
+        var y = window.scrollY;
+        if (!glide && y !== lastY) dir = y > lastY ? 1 : -1;
+        lastY = y; clearTimeout(idle); if (!glide) idle = setTimeout(settle, 160);
+      }, { passive: true });
+      window.addEventListener('touchstart', function () { touching = true; clearTimeout(idle); }, { passive: true });
+      window.addEventListener('touchend', function () { touching = false; clearTimeout(idle); idle = setTimeout(settle, 220); }, { passive: true });
     });
   }
 
