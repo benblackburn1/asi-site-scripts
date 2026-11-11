@@ -5,6 +5,8 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.5.1  2026-11-11  Photo chips: a chip that would sit on another pin's dot or another chip moves to the other side of
+ *                     its own point (the Head Drive chip did, at tablet widths, once pushed clear of the heading).
  * v1.5.0  2026-11-11  Aggregate "Automation control you can see" is now the stacker photo (Ben, A1-A4): new photoChips
  *                     module. Chips are pinned to points in the picture ([data-asi-at]="x,y" as fractions of the photo)
  *                     and stay on them through the cover crop at every width and through a slow push-in as the section
@@ -56,7 +58,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.5.0';
+  window.__asiExperience = '1.5.1';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -230,22 +232,38 @@
       var heads = $$('h1, h2', closestSection(wrap)).filter(function (h) { return !wrap.contains(h); });
       function clear(p) {
         if (!p.chip) return;
-        var bottom = p.side.charAt(0) === 'b', dy = 0;
-        p.chip.style.top = bottom ? '10px' : 'auto';
-        p.chip.style.bottom = bottom ? 'auto' : '10px';
         var wr = wrap.getBoundingClientRect(), zr = wr.width / (wrap.clientWidth || 1) || 1;
-        var cr = p.chip.getBoundingClientRect();
-        heads.forEach(function (h) {
-          var hr = h.getBoundingClientRect();
-          if (!hr.width || hr.bottom <= wr.top || hr.top >= wr.bottom) return;
-          if (cr.left < hr.right && hr.left < cr.right && cr.top < hr.bottom + 8 * zr && hr.top < cr.bottom) dy = Math.max(dy, (hr.bottom - cr.top) / zr + 8);
-        });
-        if (dy > 0) {
-          /* move the chip below the heading: it now hangs under the dot */
-          var top = (cr.top - wr.top) / zr - parseFloat(p.el.style.top) + dy;
-          p.chip.style.bottom = 'auto'; p.chip.style.top = top.toFixed(1) + 'px';
-          p.lead.style.display = 'block'; p.lead.style.height = Math.max(0, top + p.chip.offsetHeight / 2).toFixed(1) + 'px';
-        } else p.lead.style.display = 'none';
+        function put(left) {
+          var bottom = p.side.charAt(0) === 'b', dy = 0;
+          p.chip.style.left = left ? 'auto' : '14px'; p.chip.style.right = left ? '14px' : 'auto';
+          p.chip.style.top = bottom ? '10px' : 'auto'; p.chip.style.bottom = bottom ? 'auto' : '10px';
+          p.lead.style.left = left ? 'auto' : '0'; p.lead.style.right = left ? '0' : 'auto';
+          p.lead.style.borderLeftWidth = left ? '0' : '1px'; p.lead.style.borderRightWidth = left ? '1px' : '0';
+          var cr = p.chip.getBoundingClientRect();
+          heads.forEach(function (h) {
+            var hr = h.getBoundingClientRect();
+            if (!hr.width || hr.bottom <= wr.top || hr.top >= wr.bottom) return;
+            if (cr.left < hr.right && hr.left < cr.right && cr.top < hr.bottom + 8 * zr && hr.top < cr.bottom) dy = Math.max(dy, (hr.bottom - cr.top) / zr + 8);
+          });
+          if (dy > 0) {
+            /* move the chip below the heading: it now hangs under the dot on a thin leader */
+            var top = (cr.top - wr.top) / zr - parseFloat(p.el.style.top) + dy;
+            p.chip.style.bottom = 'auto'; p.chip.style.top = top.toFixed(1) + 'px';
+            p.lead.style.display = 'block'; p.lead.style.height = Math.max(0, top + p.chip.offsetHeight / 2).toFixed(1) + 'px';
+          } else p.lead.style.display = 'none';
+          /* true when the chip sits on or right against another pin's dot, or covers another chip */
+          var c = p.chip.getBoundingClientRect(), pad = 12 * zr;
+          return pins.some(function (o) {
+            if (o === p) return false;
+            var d = o.el.getBoundingClientRect();
+            if (d.left > c.left - pad && d.left < c.right + pad && d.top > c.top - pad && d.top < c.bottom + pad) return true;
+            if (!o.chip) return false;
+            var e = o.chip.getBoundingClientRect();
+            return c.left < e.right && e.left < c.right && c.top < e.bottom && e.top < c.bottom;
+          });
+        }
+        var left = p.side.charAt(1) === 'l';
+        if (put(left)) { if (put(!left)) put(left); }
       }
       if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
       wrap.style.overflow = 'hidden';
