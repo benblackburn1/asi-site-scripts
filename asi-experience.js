@@ -5,6 +5,7 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.3.1  2026-11-10  R-28 final: checklist rows only dim while the sequence is pinned (phones show them plain).
  * v1.3.0  2026-11-10  Review round, Phase 4: pinned scroll-scrubbed frame sequence (R-28, data-asi-sequence; test page only
  *                     until approved). Carousel loops skip hidden cards (R-07 hid the four old Home machine cards).
  * v1.2.0  2026-11-10  Review round, Phase 3 (live scenes, Aggregate). The hero rocks are the live visualizer scene, opened
@@ -43,7 +44,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.3.0';
+  window.__asiExperience = '1.3.1';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -145,7 +146,7 @@
     '.asi-flow{stroke-dasharray:7 7;animation:asiFlow 1.1s linear infinite}',
     '.asi-rt{transition:opacity .15s linear}',
     /* v1.3.0 */
-    '[data-asi-seq-tick]{opacity:.35;transition:opacity .3s}', '[data-asi-seq-tick].asi-ticked{opacity:1}',
+    '.asi-seq-on [data-asi-seq-tick]{opacity:.35;transition:opacity .3s}', '.asi-seq-on [data-asi-seq-tick].asi-ticked{opacity:1}',
     '@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}html.asi-js .asi-rv{opacity:1;transform:none;transition:none}.asi-wi{transform:none;transition:none}.asi-ring{animation:none}}'
   ];
   var st = document.createElement('style');
@@ -1031,13 +1032,13 @@
         var rest = $$(':scope > *', sec).filter(function (el) { return el !== head && el !== stage; });
         if (!want) {
           if (!built) return;
-          stage.style.display = 'none'; sec.style.height = ''; sec.style.overflow = ''; sec.style.paddingBottom = '';
+          stage.style.display = 'none'; sec.style.height = ''; sec.style.overflow = ''; sec.style.paddingBottom = ''; sec.classList.remove('asi-seq-on');
           cards.forEach(function (c) { c.home.insertBefore(c.el, c.next); c.el.style.cssText = ''; });
           rest.forEach(function (el) { el.style.display = ''; });
           return;
         }
         if (!built) build();
-        stage.style.display = '';
+        stage.style.display = ''; sec.classList.add('asi-seq-on');
         rest.forEach(function (el) { el.style.display = 'none'; });
         cards.forEach(function (c) {
           stage.appendChild(c.el);
