@@ -5,6 +5,9 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.7.2  2026-11-11  Phone menu eases open and shut (height and padding over 0.5 s, links fading in one after another)
+ *                     and so do its Services/About groups (Ben: "make the menu opening a smooth eased animation").
+ *                     The Menu link no longer jumps the page to the top.
  * v1.7.1  2026-11-11  E-House sequence on phones: the camera follows the container (each frame's box measured on load,
  *                     centre smoothed over 11 frames) and the scene is larger, one steady scale with the widest moment
  *                     at 88% of the screen (Ben: "keep the E-House in the centre on mobile and make it a bit bigger").
@@ -72,7 +75,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.7.1';
+  window.__asiExperience = '1.7.2';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -364,13 +367,53 @@
     $$('[data-asi-menu]').forEach(function (btn) {
       var nav = btn.closest('.nav'), panel = nav && $('.nav-mobile', nav); if (!panel) return;
       btn.setAttribute('aria-expanded', 'false');
-      btn.addEventListener('click', function () {
-        var on = panel.classList.toggle('asi-open');
+      function set(on) {
+        slide(panel, 'asi-open', on, true);
         btn.setAttribute('aria-expanded', on ? 'true' : 'false');
         btn.textContent = on ? 'Close' : 'Menu';
-      });
-      $$('a:not([data-asi-mgroup])', panel).forEach(function (a) { a.addEventListener('click', function () { panel.classList.remove('asi-open'); btn.textContent = 'Menu'; }); });
+      }
+      /* v1.7.2: the button is a link to "#"; without preventDefault a tap could jump the page to the top */
+      btn.addEventListener('click', function (e) { e.preventDefault(); set(!panel.classList.contains('asi-open') || panel.__asiClosing); });
+      $$('a:not([data-asi-mgroup])', panel).forEach(function (a) { a.addEventListener('click', function () { set(false); }); });
     });
+  }
+
+  /* v1.7.2 (Ben: "make the menu opening a smooth eased animation"): open or close a block that is display:none until
+     it has class `cls`, by easing its height (and padding) to the content's height while it fades in; with stagger,
+     its children follow one after another. Closing runs the same in reverse, then drops the class. */
+  var SLIDE = '.5s cubic-bezier(.22,.8,.24,1)';
+  function slide(el, cls, open, stagger) {
+    clearTimeout(el.__asiT);
+    var kids = stagger ? $$(':scope > *', el).filter(function (k) { return k.offsetParent !== null || open; }) : [];
+    if (RM) {
+      el.classList.toggle(cls, open); el.__asiClosing = false;
+      ['height', 'paddingTop', 'paddingBottom', 'opacity', 'overflow', 'transition'].forEach(function (p) { el.style[p] = ''; });
+      kids.forEach(function (k) { k.style.opacity = ''; k.style.transform = ''; k.style.transition = ''; });
+      return;
+    }
+    var was = el.classList.contains(cls) && !el.__asiClosing, from = el.classList.contains(cls) ? el.getBoundingClientRect().height : 0;
+    el.__asiClosing = !open;
+    el.classList.add(cls);
+    el.style.transition = 'none'; el.style.overflow = 'hidden';
+    var to = 0;
+    if (open) { el.style.height = ''; el.style.paddingTop = ''; el.style.paddingBottom = ''; to = el.getBoundingClientRect().height; }
+    el.style.height = from + 'px';
+    if (!was && open && !from) { el.style.paddingTop = el.style.paddingBottom = '0px'; el.style.opacity = '0'; }
+    if (stagger && open && !was) kids.forEach(function (k) { k.style.transition = 'none'; k.style.opacity = '0'; k.style.transform = 'translateY(-8px)'; });
+    void el.offsetHeight;
+    el.style.transition = 'height ' + SLIDE + ',padding ' + SLIDE + ',opacity .35s ' + EASE;
+    el.style.height = to + 'px';
+    el.style.paddingTop = el.style.paddingBottom = open ? '' : '0px';
+    el.style.opacity = open ? '1' : '0';
+    kids.forEach(function (k, i) {
+      k.style.transition = 'opacity .35s ' + EASE + ' ' + (open ? 0.06 + i * 0.04 : 0) + 's,transform .4s ' + EASE + ' ' + (open ? 0.06 + i * 0.04 : 0) + 's';
+      k.style.opacity = open ? '1' : '0'; k.style.transform = open ? 'none' : 'translateY(-4px)';
+    });
+    el.__asiT = setTimeout(function () {
+      if (!open) { el.classList.remove(cls); el.__asiClosing = false; }
+      ['height', 'paddingTop', 'paddingBottom', 'opacity', 'overflow', 'transition'].forEach(function (p) { el.style[p] = ''; });
+      kids.forEach(function (k) { k.style.opacity = ''; k.style.transform = ''; k.style.transition = ''; });
+    }, open ? 560 + kids.length * 40 : 520);
   }
 
   /* ---------- 1b. nav v2 (v1.6.0): the bar narrows on scroll and its menus open inside it ----------
@@ -384,7 +427,13 @@
   function navPanels() {
     $$('[data-asi-mgroup]').forEach(function (b) {
       var g = b.parentNode; b.setAttribute('aria-expanded', 'false');
-      b.addEventListener('click', function (e) { e.preventDefault(); var on = g.classList.toggle('is-open'); $$('.nav-mgroup-list, .nav-caret', g).forEach(function (x) { x.classList.toggle('is-open', on); }); b.setAttribute('aria-expanded', on ? 'true' : 'false'); });
+      b.addEventListener('click', function (e) {
+        e.preventDefault();
+        var on = g.classList.toggle('is-open'), list = $('.nav-mgroup-list', g);
+        $$('.nav-caret', g).forEach(function (x) { x.classList.toggle('is-open', on); });
+        if (list) slide(list, 'is-open', on, true);   /* v1.7.2: groups ease open and shut too */
+        b.setAttribute('aria-expanded', on ? 'true' : 'false');
+      });
     });
     var nav = $('.nav[data-asi-nav]'); if (!nav) return;
     var logo = $('.nav-logo-link', nav), box = $('.nav-panels', nav);
