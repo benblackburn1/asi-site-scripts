@@ -5,6 +5,10 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.7.0  2026-11-11  E-House sequence on phones and tablets (Ben: "mobile needs the scrolling animation with the cards
+ *                     fixed at the bottom and changing"): below 992 px the scene pins and scrubs too, drawn full width
+ *                     between the nav and the cards; the cards are held 16 px from the bottom of the screen and cross-fade
+ *                     as their frame ranges pass. The stage is 100svh and only re-measured when the width changes.
  * v1.6.0  2026-11-11  Nav v2 (Ben, N1/N4): new navPanels module. Past 120 px of scroll the desktop bar eases down to
  *                     max(420px, 30vw) with the logo clipped to the ASI mark (0.8 s ease-in-out; widens again under
  *                     60 px). Services and About open inside the bar: it widens back to full, grows to the panel and
@@ -65,7 +69,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.6.0';
+  window.__asiExperience = '1.7.0';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -1291,6 +1295,17 @@
         cur = f; if (!im) return;
         var W = canvas.width, H = canvas.height, s = Math.min(W / im.naturalWidth, H / im.naturalHeight);
         var w = im.naturalWidth * s, h = im.naturalHeight * s, x = (W - w) / 2, y = (H - h) / 2;
+        if (on === 'mob') {
+          /* phones (v1.7.0): the scene sits larger, centred in the room between the nav and the cards held at the
+             bottom; the frame's point (0.45, 0.5), about where the container sits, lands on the centre of that room */
+          var dpr = W / (canvas.clientWidth || W), top = 76 * dpr, bot = H - (cardH + 32) * dpr;
+          /* the whole frame width: the container runs from 2% to 93% of the frame across the sequence, so any zoom
+             would push it off a phone screen at one end or the other */
+          var z = 1, ax = 0.5;
+          s = Math.min(W / im.naturalWidth * z, Math.max(1, bot - top) / im.naturalHeight);
+          w = im.naturalWidth * s; h = im.naturalHeight * s;
+          x = W / 2 - ax * w; y = (top + bot) / 2 - 0.5 * h;
+        }
         if (!bg) bg = sampleBg(im);
         ctx.fillStyle = 'rgb(' + bg + ')'; ctx.fillRect(0, 0, W, H);
         ctx.drawImage(im, x, y, w, h);
@@ -1313,30 +1328,37 @@
           var d = g.getImageData(0, 0, 1, 1).data; return d[0] + ',' + d[1] + ',' + d[2];
         } catch (e) { return '245,243,241'; }
       }
+      var cardH = 0, lastW = 0;
+      /* 'desk' (992+): cards beside the scene, middle of the screen. 'mob' (v1.7.0, Ben: "mobile needs the scrolling
+         animation with the cards fixed at the bottom and changing"): the same pinned, scrubbed scene, cards held at
+         the bottom of the screen and cross-faded as their frame ranges pass. */
       function layout() {
-        var want = DESK.matches;
+        var want = DESK.matches ? 'desk' : 'mob';
         if (want === on) return;
-        on = want;
-        var rest = $$(':scope > *', sec).filter(function (el) { return el !== head && el !== stage; });
-        if (!want) {
-          if (!built) return;
-          stage.style.display = 'none'; sec.style.height = ''; sec.style.overflow = ''; sec.style.paddingBottom = ''; sec.classList.remove('asi-seq-on');
-          cards.forEach(function (c) { c.home.insertBefore(c.el, c.next); c.el.style.cssText = ''; });
-          rest.forEach(function (el) { el.style.display = ''; });
-          return;
-        }
+        on = want; lastW = 0;
         if (!built) build();
+        var rest = $$(':scope > *', sec).filter(function (el) { return el !== head && el !== stage; });
         stage.style.display = ''; sec.classList.add('asi-seq-on');
         rest.forEach(function (el) { el.style.display = 'none'; });
         cards.forEach(function (c) {
           stage.appendChild(c.el);
-          c.el.style.cssText = 'position:absolute;top:50%;' + (c.side === 'left' ? 'left' : 'right') + ':max(20px,calc(50% - 680px));transform:translateY(-50%);max-width:420px;opacity:0;transition:opacity .45s, transform .45s;pointer-events:none;z-index:1';
+          c.el.style.cssText = on === 'desk'
+            ? 'position:absolute;top:50%;' + (c.side === 'left' ? 'left' : 'right') + ':max(20px,calc(50% - 680px));transform:translateY(-50%);max-width:420px;opacity:0;transition:opacity .45s, transform .45s;pointer-events:none;z-index:1'
+            : 'position:absolute;left:16px;right:16px;top:auto;bottom:calc(16px + env(safe-area-inset-bottom, 0px));width:auto;max-width:none;margin:0;transform:translateY(16px);opacity:0;transition:opacity .4s, transform .4s;pointer-events:none;z-index:1';
         });
       }
       function size() {
         if (!on) return;
-        var vh = window.innerHeight / zoomOf(), dpr = Math.min(2, window.devicePixelRatio || 1);
-        stage.style.height = Math.round(vh) + 'px';
+        var dpr = Math.min(2, window.devicePixelRatio || 1), mob = on === 'mob';
+        /* phones: the stage is the smallest visible viewport, so a card is never behind the browser's toolbar, and
+           the section is only re-measured when the width changes (the toolbar collapsing must not jump the page) */
+        if (mob) {
+          if (stage.clientWidth === lastW && canvas.width) return;
+          lastW = stage.clientWidth;
+          stage.style.height = (window.CSS && CSS.supports && CSS.supports('height', '100svh')) ? '100svh' : window.innerHeight + 'px';
+          cardH = 0; cards.forEach(function (c) { cardH = Math.max(cardH, c.el.offsetHeight); });
+        } else stage.style.height = Math.round(window.innerHeight / zoomOf()) + 'px';
+        var vh = stage.clientHeight;
         sec.style.overflow = 'clip'; sec.style.paddingBottom = '0px';
         sec.style.height = Math.round((head ? head.offsetHeight : 0) + vh * 4) + 'px';
         var cw = Math.round(stage.clientWidth * dpr), ch = Math.round(vh * dpr);
@@ -1350,7 +1372,8 @@
         var pr = total > 0 ? clamp((-r.top - top) / total, 0, 1) : 0;
         var f = Math.min(count - 1, Math.round(pr * (count - 1)));
         draw(f);
-        cards.forEach(function (c) { var vis = f >= c.from && f <= c.to; c.el.style.opacity = vis ? '1' : '0'; c.el.style.pointerEvents = vis ? 'auto' : 'none'; c.el.style.transform = 'translateY(' + (vis ? '-50%' : 'calc(-50% + 16px)') + ')'; });
+        var dk = on === 'desk';
+        cards.forEach(function (c) { var vis = f >= c.from && f <= c.to; c.el.style.opacity = vis ? '1' : '0'; c.el.style.pointerEvents = vis ? 'auto' : 'none'; c.el.style.transform = 'translateY(' + (dk ? (vis ? '-50%' : 'calc(-50% + 16px)') : (vis ? '0' : '16px')) + ')'; });
         ticks.forEach(function (t) { t.el.classList.toggle('asi-ticked', f >= t.at); });
       });
     });
