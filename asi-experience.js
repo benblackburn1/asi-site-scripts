@@ -5,6 +5,8 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.7.3  2026-11-11  Photo chips: a chip that would run off the photo's side moves to the other side of its point (the
+ *                     phone crop of the Aggregate stacker is narrow); pins hidden at the current width are ignored.
  * v1.7.2  2026-11-11  Phone menu eases open and shut (height and padding over 0.5 s, links fading in one after another)
  *                     and so do its Services/About groups (Ben: "make the menu opening a smooth eased animation").
  *                     The Menu link no longer jumps the page to the top.
@@ -75,7 +77,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.7.2';
+  window.__asiExperience = '1.7.3';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -264,7 +266,7 @@
       /* headings laid over the photo (desktop) that chips must not cover */
       var heads = $$('h1, h2', closestSection(wrap)).filter(function (h) { return !wrap.contains(h); });
       function clear(p) {
-        if (!p.chip) return;
+        if (!p.chip || p.el.offsetParent === null) return;
         var wr = wrap.getBoundingClientRect(), zr = wr.width / (wrap.clientWidth || 1) || 1;
         function put(left) {
           var bottom = p.side.charAt(0) === 'b', dy = 0;
@@ -284,10 +286,12 @@
             p.chip.style.bottom = 'auto'; p.chip.style.top = top.toFixed(1) + 'px';
             p.lead.style.display = 'block'; p.lead.style.height = Math.max(0, top + p.chip.offsetHeight / 2).toFixed(1) + 'px';
           } else p.lead.style.display = 'none';
-          /* true when the chip sits on or right against another pin's dot, or covers another chip */
+          /* true when the chip sits on or right against another pin's dot, covers another chip, or runs off the
+             photo's side (v1.7.3: on a narrow phone crop the pile and stream points sit near the right edge) */
           var c = p.chip.getBoundingClientRect(), pad = 12 * zr;
+          if (c.left < wr.left + 8 * zr || c.right > wr.right - 8 * zr) return true;
           return pins.some(function (o) {
-            if (o === p) return false;
+            if (o === p || o.el.offsetParent === null) return false;   /* pins hidden at this width don't count */
             var d = o.el.getBoundingClientRect();
             if (d.left > c.left - pad && d.left < c.right + pad && d.top > c.top - pad && d.top < c.bottom + pad) return true;
             if (!o.chip) return false;
