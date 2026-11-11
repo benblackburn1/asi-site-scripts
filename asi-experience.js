@@ -5,6 +5,9 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.4.1  2026-11-11  E-House sequence: the renders clip the container's shadow at the frame's left/right edges, which
+ *                     showed as a hard line. Each frame's side edges now fade into its own background, and any space
+ *                     beside the frame is filled with that background instead of the page colour.
  * v1.4.0  2026-11-11  UX review Phase 1 + careers path: new forms module. The apply form's Role dropdown gets its real
  *                     options (Engineering, Programming, Field startups, Not sure yet) while the Designer still holds
  *                     the placeholder, and ?role= in the URL preselects one (Home job cards link to
@@ -49,7 +52,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.4.0';
+  window.__asiExperience = '1.4.1';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -1054,8 +1057,28 @@
         if (!im) { for (var d = 1; d < count && !im; d++) im = frames[f - d] || frames[f + d]; }
         cur = f; if (!im) return;
         var W = canvas.width, H = canvas.height, s = Math.min(W / im.naturalWidth, H / im.naturalHeight);
-        var w = im.naturalWidth * s, h = im.naturalHeight * s;
-        ctx.clearRect(0, 0, W, H); ctx.drawImage(im, (W - w) / 2, (H - h) / 2, w, h);
+        var w = im.naturalWidth * s, h = im.naturalHeight * s, x = (W - w) / 2, y = (H - h) / 2;
+        if (!bg) bg = sampleBg(im);
+        ctx.fillStyle = 'rgb(' + bg + ')'; ctx.fillRect(0, 0, W, H);
+        ctx.drawImage(im, x, y, w, h);
+        /* The renders clip the container's shadow at the frame's side edges: fade both sides into the frame's own
+           background so the shadow dissolves instead of stopping in a hard line (5% of the frame width keeps clear of
+           the container, which never comes closer than ~6%). */
+        var fw = w * 0.05;
+        [[x, x + fw], [x + w, x + w - fw]].forEach(function (e) {
+          var g = ctx.createLinearGradient(e[0], 0, e[1], 0);
+          g.addColorStop(0, 'rgba(' + bg + ',1)'); g.addColorStop(0.3, 'rgba(' + bg + ',.72)');
+          g.addColorStop(0.6, 'rgba(' + bg + ',.3)'); g.addColorStop(1, 'rgba(' + bg + ',0)');
+          ctx.fillStyle = g; ctx.fillRect(Math.min(e[0], e[1]) - 1, y, fw + 2, h);
+        });
+      }
+      var bg = null;
+      function sampleBg(im) {
+        try {
+          var c = document.createElement('canvas'); c.width = c.height = 4;
+          var g = c.getContext('2d'); g.drawImage(im, 0, 0, 8, 8, 0, 0, 4, 4);
+          var d = g.getImageData(0, 0, 1, 1).data; return d[0] + ',' + d[1] + ',' + d[2];
+        } catch (e) { return '245,243,241'; }
       }
       function layout() {
         var want = DESK.matches;
