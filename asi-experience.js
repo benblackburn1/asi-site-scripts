@@ -5,6 +5,8 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.11.0 2026-11-18  E-House hero (Ben): the photographer's crane loop (an E-House lifted onto the truck) plays
+ *                     muted behind the hero card; the still under it is the loop's first frame.
  * v1.10.0 2026-11-11  Careers (Ben's QA): the Contact careers cards load their ?role= again (v1.8.0's same-page glide
  *                     swallowed the query), arriving on a #hash lands the target below the desktop nav, and the
  *                     application intro names the chosen role ("You're applying for Engineering.").
@@ -92,7 +94,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.10.0';
+  window.__asiExperience = '1.11.0';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -113,13 +115,15 @@
     'hmi-running': 'video/hmi-running.mp4',
     'hmi-autostart': 'video/hmi-autostart.mp4',
     'hmi-alarm': 'video/hmi-alarm.mp4',
-    'conveyor-bitmap': 'video/conveyor-bitmap.mp4'
+    'conveyor-bitmap': 'video/conveyor-bitmap.mp4',
+    'eh-crane': 'video/eh-crane-onto-truck.mp4'
   };
   /* Page slot names -> library loops. Unmapped slots keep their still image. */
   var SLOT = {
     'hero-drone': { v: 'hero-drone' },
     'cloud-hero': { v: 'conveyor-bitmap', filter: 'brightness(.3) contrast(1.15)' },
-    'agg-rocks': { v: 'agg-rocks' }
+    'agg-rocks': { v: 'agg-rocks' },
+    'eh-hero': { v: 'eh-crane' }
     /* Machine cards (machine-1..4) are still renders by design. Not mapped yet (still images stay): the
        same visualizer camera as their Figma stills; eh-container-1, kpi-dashboard, cloud-phone,
        plant-diagram and who-1..3 have no matching loop yet. Add a line here when one is rendered. */
