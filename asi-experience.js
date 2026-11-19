@@ -5,6 +5,9 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.12.0 2026-11-19  E-House hero (Ben): the full 74 s E-House film plays from Vimeo (background mode, muted,
+ *                     looped) behind the hero card. Slots can now name a Vimeo id; the still stays underneath and the
+ *                     film fades in once its opening fade from black has finished. Reduced motion / saveData keep the still.
  * v1.11.0 2026-11-18  E-House hero (Ben): the photographer's crane loop (an E-House lifted onto the truck) plays
  *                     muted behind the hero card; the still under it is the loop's first frame.
  * v1.10.0 2026-11-11  Careers (Ben's QA): the Contact careers cards load their ?role= again (v1.8.0's same-page glide
@@ -94,7 +97,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.11.0';
+  window.__asiExperience = '1.12.0';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -123,7 +126,7 @@
     'hero-drone': { v: 'hero-drone' },
     'cloud-hero': { v: 'conveyor-bitmap', filter: 'brightness(.3) contrast(1.15)' },
     'agg-rocks': { v: 'agg-rocks' },
-    'eh-hero': { v: 'eh-crane' }
+    'eh-hero': { vimeo: '1248367361', ar: 4096 / 2160, showAt: 1.8 }   /* v1.12.0: was { v: 'eh-crane' } */
     /* Machine cards (machine-1..4) are still renders by design. Not mapped yet (still images stay): the
        same visualizer camera as their Figma stills; eh-container-1, kpi-dashboard, cloud-phone,
        plant-diagram and who-1..3 have no matching loop yet. Add a line here when one is rendered. */
@@ -200,6 +203,9 @@
     '[data-asi-tag]{transition:left .45s ' + EASE + ',top .45s ' + EASE + ',opacity .3s}',
     '.asi-video{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .6s}',
     '.asi-video.asi-on{opacity:1}',
+    '.asi-vimeo{position:absolute;left:0;top:0;width:100%;height:100%;overflow:hidden;pointer-events:none;opacity:0;transition:opacity .8s}',
+    '.asi-vimeo.asi-on{opacity:1}',
+    '.asi-vimeo iframe{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border:0;pointer-events:none}',
     '[data-asi-chips]>*{will-change:transform}',
     /* v1.10.0 careers apply modal */
     'html.asi-modal-lock{overflow:hidden}',
@@ -1113,7 +1119,8 @@
     if (RM || !BASE) return;
     var saveData = navigator.connection && navigator.connection.saveData;
     $$('[data-asi-video]').forEach(function (wrap) {
-      var slot = SLOT[wrap.getAttribute('data-asi-video')]; var key = slot && slot.v; if (!key || !VIDEO[key] || saveData) return;
+      var slot = SLOT[wrap.getAttribute('data-asi-video')]; if (slot && slot.vimeo && !saveData) return vimeoBg(wrap, slot);
+      var key = slot && slot.v; if (!key || !VIDEO[key] || saveData) return;
       if (wrap.hasAttribute('data-asi-live') && liveAllowed()) return;   /* v1.2.0: the live scene replaces the loop */
       var still = $('img', wrap);
       if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
@@ -1128,6 +1135,36 @@
       inView(wrap, function (on) { if (on) { var p = v.play(); if (p && p.catch) p.catch(function () {}); } else v.pause(); }, { threshold: 0.05 });
       if (key === 'hero-drone') trackChips(wrap, v);
     });
+  }
+  /* v1.12.0: a Vimeo film as a cover-fit background (Vimeo's background mode: muted, looped, no controls).
+     The still stays underneath; the film fades in once playback passes slot.showAt (after its fade from black). */
+  function vimeoBg(wrap, slot) {
+    if (wrap.hasAttribute('data-asi-live') && liveAllowed()) return;
+    var still = $('img', wrap);
+    if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
+    var box = document.createElement('div'); box.className = 'asi-vimeo'; box.setAttribute('aria-hidden', 'true');
+    if (still) box.style.borderRadius = getComputedStyle(still).borderRadius;
+    var f = document.createElement('iframe');
+    f.title = ''; f.setAttribute('tabindex', '-1'); f.setAttribute('allow', 'autoplay; fullscreen; picture-in-picture');
+    f.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+    box.appendChild(f);
+    if (still && still.nextSibling) wrap.insertBefore(box, still.nextSibling); else wrap.appendChild(box);
+    var ar = slot.ar || 16 / 9;
+    function fit() { var w = box.clientWidth, h = box.clientHeight; if (!w || !h) return; if (w / h > ar) { f.style.width = w + 'px'; f.style.height = Math.ceil(w / ar) + 'px'; } else { f.style.height = h + 'px'; f.style.width = Math.ceil(h * ar) + 'px'; } }
+    fit(); if (window.ResizeObserver) new ResizeObserver(fit).observe(box); else window.addEventListener('resize', fit);
+    function post(method, value) { if (f.contentWindow) f.contentWindow.postMessage(JSON.stringify(value === undefined ? { method: method } : { method: method, value: value }), 'https://player.vimeo.com'); }
+    window.addEventListener('message', function (e) {
+      if (e.source !== f.contentWindow || !/^https:\/\/player\.vimeo\.com$/.test(e.origin)) return;
+      var d = e.data; if (typeof d === 'string') { try { d = JSON.parse(d); } catch (x) { return; } }
+      if (!d || !d.event) return;
+      if (d.event === 'ready') { post('addEventListener', 'playProgress'); post('addEventListener', 'timeupdate'); }
+      if ((d.event === 'playProgress' || d.event === 'timeupdate') && d.data && d.data.seconds >= (slot.showAt || 0)) box.classList.add('asi-on');
+    });
+    var started = false;
+    inView(wrap, function (on) {
+      if (on && !started) { started = true; f.src = 'https://player.vimeo.com/video/' + slot.vimeo + '?background=1&autoplay=1&loop=1&muted=1&playsinline=1&autopause=0&dnt=1'; return; }
+      if (started) post(on ? 'play' : 'pause');
+    }, { threshold: 0.05 });
   }
   function trackChips(root, video) {
     var layer = $('[data-asi-chips]', closestSection(root)); if (!layer) return;
