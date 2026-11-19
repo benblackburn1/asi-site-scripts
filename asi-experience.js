@@ -5,6 +5,9 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.13.0 2026-11-19  Partners cards (Ben): the green look is now a state, not the third card. Every card rests grey;
+ *                     the hovered or focused card turns green, and on phone/tablet the card snapped into view does.
+ *                     Arrows are hidden in the Designer, so the row no longer loops.
  * v1.12.0 2026-11-19  E-House hero (Ben): the full 74 s E-House film plays from Vimeo (background mode, muted,
  *                     looped) behind the hero card. Slots can now name a Vimeo id; the still stays underneath and the
  *                     film fades in once its opening fade from black has finished. Reduced motion / saveData keep the still.
@@ -97,7 +100,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.12.0';
+  window.__asiExperience = '1.13.0';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -193,6 +196,16 @@
     '[data-asi-carousel]::-webkit-scrollbar{display:none}',
     '[data-asi-carousel]>*{scroll-snap-align:start;flex-shrink:0}',
     '[data-asi-carousel].asi-drag{cursor:grabbing;scroll-snap-type:none}',
+    /* v1.13.0: Partners cards rest grey; the hovered, focused or snapped (.is-on) card takes the green look. */
+    '.ptn-pcard{transition:background-color .45s ' + EASE + '}',
+    '.ptn-pcard .ptn-pcard-img{transition:opacity .45s ' + EASE + '}',
+    '.ptn-pcard .ptn-pcard-tint{transition:background-color .45s ' + EASE + '}',
+    '.ptn-pcard h3,.ptn-pcard .ptn-pcard-desc{transition:color .45s ' + EASE + '}',
+    '.ptn-pcard.is-on,.ptn-pcard:focus-within{background-color:transparent}',
+    '.ptn-pcard.is-on .ptn-pcard-img,.ptn-pcard:focus-within .ptn-pcard-img{opacity:1}',
+    '.ptn-pcard.is-on .ptn-pcard-tint,.ptn-pcard:focus-within .ptn-pcard-tint{background-color:#cbe0b8}',
+    '.ptn-pcard.is-on h3,.ptn-pcard.is-on .ptn-pcard-desc,.ptn-pcard:focus-within h3,.ptn-pcard:focus-within .ptn-pcard-desc{color:#474747}',
+    '@media (hover:hover){.ptn-pcard:hover{background-color:transparent}.ptn-pcard:hover .ptn-pcard-img{opacity:1}.ptn-pcard:hover .ptn-pcard-tint{background-color:#cbe0b8}.ptn-pcard:hover h3,.ptn-pcard:hover .ptn-pcard-desc{color:#474747}}',
     '[data-asi-selector] [data-asi-item],[data-asi-accordion] [data-asi-item]{cursor:pointer;transition:opacity .35s,background-color .35s,color .35s}',
     '.asi-pane-off{position:absolute!important;left:0;top:0;width:100%;height:100%;opacity:0;pointer-events:none}',
     '[data-asi-pane]{transition:opacity .5s ' + EASE + '}',
@@ -268,7 +281,7 @@
      script runs after the page has already loaded. */
   function boot() {
     [forms, careersModal, photoChips, navMenus, navPanels, navAutoHide, reveals, splitHeads, eyebrowPulse, faqs, loops, carousels, selectors, accordions, charts, counters, hotspots, videos, liveViews, liveChips, followers,
-      cascades, stacks, readthroughs, progressLines, orbits, diagrams, sequences, anchors]
+      cascades, stacks, readthroughs, progressLines, orbits, diagrams, sequences, anchors, partnerCards]
       .forEach(function (fn) { safe(fn.name, fn)(); });
   }
 
@@ -1458,6 +1471,32 @@
       var t;
       track.addEventListener('scroll', function () { clearTimeout(t); t = setTimeout(wrap, 160); }, { passive: true });
       if ('onscrollend' in window) track.addEventListener('scrollend', wrap);
+    });
+  }
+
+  /* ---------- v1.13.0: Partners cards. While the row scrolls (phone/tablet) the card snapped at the gutter is .is-on;
+     at the end of the row it is the last card. When all three fit (desktop) none is, so hover alone decides. ---------- */
+  function partnerCards() {
+    $$('.ptn-partners-track').forEach(function (track) {
+      var cards = $$(':scope > .ptn-pcard', track); if (!cards.length) return;
+      var raf = 0;
+      function update() {
+        raf = 0;
+        var on = -1, max = track.scrollWidth - track.clientWidth;
+        if (max > 2) {
+          if (track.scrollLeft >= max - 2) on = cards.length - 1;
+          else {
+            var edge = track.getBoundingClientRect().left + (parseFloat(getComputedStyle(track).paddingLeft) || 0), best = 1e9;
+            cards.forEach(function (c, i) { var d = Math.abs(c.getBoundingClientRect().left - edge); if (d < best) { best = d; on = i; } });
+          }
+        }
+        cards.forEach(function (c, i) { c.classList.toggle('is-on', i === on); });
+      }
+      function later() { if (!raf) raf = requestAnimationFrame(update); }
+      track.addEventListener('scroll', later, { passive: true });
+      window.addEventListener('resize', later);
+      window.addEventListener('load', later);
+      update();
     });
   }
 
