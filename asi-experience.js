@@ -5,11 +5,11 @@
  * this script returns the site to its designed, static state.
  *
  * CHANGELOG (newest first)
+ * v1.14.0 2026-11-19  FAQ icons (Ben: "just the + and - rotate and not the whole square"): the +/- image (square baked in) is
+ *                     redrawn inline; the grey square stays put and only the bars turn, the upright bar folding away into the -.
  * v1.13.0 2026-11-19  Partners cards (Ben): the green look is now a state, not the third card. Every card rests grey;
  *                     the hovered or focused card turns green, and on phone/tablet the card snapped into view does.
  *                     Arrows are hidden in the Designer, so the row no longer loops.
- * v1.13.0 2026-11-19  FAQ icons (Ben: "just the + and - rotate and not the whole square"): the +/- image (square baked in) is
- *                     redrawn inline; the grey square stays put and only the bars turn, the upright bar folding away into the -.
  * v1.12.0 2026-11-19  E-House hero (Ben): the full 74 s E-House film plays from Vimeo (background mode, muted,
  *                     looped) behind the hero card. Slots can now name a Vimeo id; the still stays underneath and the
  *                     film fades in once its opening fade from black has finished. Reduced motion / saveData keep the still.
@@ -102,7 +102,7 @@
 (function () {
   'use strict';
   if (window.__asiExperience) return;
-  window.__asiExperience = '1.13.0';
+  window.__asiExperience = '1.14.0';
 
   var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
@@ -773,7 +773,7 @@
           ic.__asiT = setTimeout(function () { ic.src = open ? minus : plus; }, 170);
         }
       }
-      /* v1.13.0: redraw the icon so only the bars turn; the original image is hidden, not removed */
+      /* v1.14.0: redraw the icon so only the bars turn; the original image is hidden, not removed */
       function iconize(it) {
         var ic = $('.faq-icon', it); if (!ic || ic.__asiG) return;
         var cs = getComputedStyle(ic), w = ic.offsetWidth || 32.6812, h = ic.offsetHeight || w;   /* hidden items: the SVG's own size */
