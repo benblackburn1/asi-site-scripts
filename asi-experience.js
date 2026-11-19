@@ -8,6 +8,8 @@
  * v1.13.0 2026-11-19  Partners cards (Ben): the green look is now a state, not the third card. Every card rests grey;
  *                     the hovered or focused card turns green, and on phone/tablet the card snapped into view does.
  *                     Arrows are hidden in the Designer, so the row no longer loops.
+ * v1.13.0 2026-11-19  FAQ icons (Ben: "just the + and - rotate and not the whole square"): the +/- image (square baked in) is
+ *                     redrawn inline; the grey square stays put and only the bars turn, the upright bar folding away into the -.
  * v1.12.0 2026-11-19  E-House hero (Ben): the full 74 s E-House film plays from Vimeo (background mode, muted,
  *                     looped) behind the hero card. Slots can now name a Vimeo id; the still stays underneath and the
  *                     film fades in once its opening fade from black has finished. Reduced motion / saveData keep the still.
@@ -216,6 +218,12 @@
     '[data-asi-tag]{transition:left .45s ' + EASE + ',top .45s ' + EASE + ',opacity .3s}',
     '.asi-video{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .6s}',
     '.asi-video.asi-on{opacity:1}',
+    '.asi-faq-ic{display:block;flex-shrink:0;background:#E3E4E1}',
+    '.asi-faq-ic svg{display:block;width:100%;height:100%;transition:transform .5s ' + EASE + '}',
+    '.asi-faq-ic .asi-v{transform-box:fill-box;transform-origin:center;transition:transform .5s ' + EASE + '}',
+    '.asi-open .asi-faq-ic svg{transform:rotate(180deg)}',
+    '.asi-open .asi-faq-ic .asi-v{transform:scaleY(0)}',
+    '@media (prefers-reduced-motion:reduce){.asi-faq-ic svg,.asi-faq-ic .asi-v{transition:none}}',
     '.asi-vimeo{position:absolute;left:0;top:0;width:100%;height:100%;overflow:hidden;pointer-events:none;opacity:0;transition:opacity .8s}',
     '.asi-vimeo.asi-on{opacity:1}',
     '.asi-vimeo iframe{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border:0;pointer-events:none}',
@@ -738,7 +746,7 @@
         it.classList.toggle('asi-open', open);
         if (!anim || RM || was === open) {
           if (a) { clearTimeout(a.__asiT); a.classList.toggle('u-hide', !open); CLEAR.forEach(function (k) { a.style[k] = ''; }); }
-          if (ic && plus && minus) { ic.src = open ? minus : plus; ic.style.transform = open ? 'rotate(180deg)' : ''; }
+          if (ic && plus && minus && !ic.__asiG) { ic.src = open ? minus : plus; ic.style.transform = open ? 'rotate(180deg)' : ''; }
           return;
         }
         if (a) {
@@ -758,14 +766,27 @@
           a.style.transform = open ? 'none' : 'translateY(-4px)';
           a.__asiT = setTimeout(function () { if (!open) a.classList.add('u-hide'); CLEAR.forEach(function (k) { a.style[k] = ''; }); }, 600);
         }
-        if (ic && plus && minus) {
+        if (ic && plus && minus && !ic.__asiG) {
           clearTimeout(ic.__asiT);
           ic.style.transition = 'transform .5s ' + EASE;
           ic.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
           ic.__asiT = setTimeout(function () { ic.src = open ? minus : plus; }, 170);
         }
       }
+      /* v1.13.0: redraw the icon so only the bars turn; the original image is hidden, not removed */
+      function iconize(it) {
+        var ic = $('.faq-icon', it); if (!ic || ic.__asiG) return;
+        var cs = getComputedStyle(ic), w = ic.offsetWidth || 32.6812, h = ic.offsetHeight || w;   /* hidden items: the SVG's own size */
+        var sp = document.createElement('span');
+        sp.className = 'asi-faq-ic'; sp.setAttribute('aria-hidden', 'true');
+        sp.style.width = w + 'px'; sp.style.height = h + 'px'; sp.style.margin = cs.margin; sp.style.alignSelf = cs.alignSelf;
+        sp.innerHTML = '<svg viewBox="0 0 32.6812 32.6812" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+          '<rect x="8.93433" y="15.6345" width="14.8125" height="1.4107" fill="#171D22"/>' +
+          '<rect class="asi-v" x="15.6352" y="8.93359" width="1.4107" height="14.8125" fill="#171D22"/></svg>';
+        ic.parentNode.insertBefore(sp, ic); ic.style.display = 'none'; ic.__asiG = sp;
+      }
       items.forEach(function (it) {
+        iconize(it);
         var q = $('.faq-q', it); if (!q) return;
         q.setAttribute('role', 'button'); q.setAttribute('tabindex', '0');
         set(it, !$('.faq-a', it) || !$('.faq-a', it).classList.contains('u-hide'));
